@@ -13,8 +13,25 @@ const CASES: &[(&str, &str, i32)] = &[
     ("echo -n", "", 0),
     ("echo -n abc", "abc", 0),
     ("echo hi -n", "hi -n\n", 0),
-    // Waits for the lexer: today Reef splits on spaces and doesn't understand quotes.
-    // ("echo a'b'c", "abc\n", 0),
+    // Quoting (lexer)
+    ("echo a'b'c", "abc\n", 0),
+    ("echo \"hello\"", "hello\n", 0),
+    ("echo \"echo hhe\"bb\"\"", "echo hhebb\n", 0),
+    ("echo -n \"hello 'j'\"", "hello 'j'", 0),
+    ("echo 'a  b'", "a  b\n", 0),
+    ("echo a\\ b", "a b\n", 0),
+    ("echo ''", "\n", 0),
+    ("echo a '' b", "a  b\n", 0),
+    ("echo '$HOME'", "$HOME\n", 0),
+    ("echo \"a\\\"b\"", "a\"b\n", 0),
+    ("echo \"a\\b\"", "a\\b\n", 0),
+    ("echo \"it's\"", "it's\n", 0),
+    ("echo hi # a comment", "hi\n", 0),
+    ("echo a#b", "a#b\n", 0),
+    ("# only a comment", "", 0),
+    // Unclosed quotes are a syntax error for now (multi-line input comes with the parser)
+    ("echo 'a", "", 2),
+    ("echo \"a", "", 2),
 ];
 
 #[test]
