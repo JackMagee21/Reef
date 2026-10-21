@@ -1,6 +1,11 @@
 [package]
-name = "Reef"
+name = "reef"
 version = "0.1.0"
 edition = "2024"
+description = "A POSIX-style shell written in Rust, native on Windows and Linux"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
+
+[dev-dependencies]
+assert_cmd = "2"
