@@ -38,6 +38,29 @@ fn spec() {
 }
 
 #[test]
-fn no_args_prints_usage_and_exits_2() {
-    Command::cargo_bin("reef").unwrap().assert().code(2);
+fn unknown_argument_prints_usage_and_exits_2() {
+    Command::cargo_bin("reef")
+        .unwrap()
+        .arg("--nope")
+        .assert()
+        .code(2);
+}
+
+#[test]
+fn no_args_runs_each_line_of_piped_stdin() {
+    Command::cargo_bin("reef")
+        .unwrap()
+        .write_stdin("echo one\necho -n two\n")
+        .assert()
+        .success()
+        .stdout("one\ntwo");
+}
+
+#[test]
+fn piped_stdin_exits_with_last_status() {
+    Command::cargo_bin("reef")
+        .unwrap()
+        .write_stdin("echo hi\nnosuchcmd_reef_test\n")
+        .assert()
+        .code(127);
 }
