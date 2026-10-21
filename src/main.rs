@@ -1,24 +1,32 @@
 mod builtins;
 mod io;
 mod platform;
+mod repl;
 mod shell;
 
 use io::Io;
 use shell::Shell;
 
 fn main() {
+    // Ctrl-C goes to every process on the console. Reef ignores it so only the
+    // running program stops, never the shell itself.
+    if let Err(e) = ctrlc::set_handler(|| {}) {
+        eprintln!("reef: could not install Ctrl-C handler: {e}");
+    }
+
     let args: Vec<String> = std::env::args().collect();
     let mut sh = Shell::new();
     let mut io = Io::terminal();
 
     sh.last_status = match args.get(1).map(String::as_str) {
+        None => repl::run(&mut sh, &mut io),
         Some("-c") => run(
             args.get(2).map(String::as_str).unwrap_or(""),
             &mut sh,
             &mut io,
         ),
-        _ => {
-            eprintln!("usage: reef -c <command>");
+        Some(_) => {
+            eprintln!("usage: reef [-c <command>]");
             2
         }
     };
