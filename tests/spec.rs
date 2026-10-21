@@ -7,6 +7,10 @@ const CASES: &[(&str, &str, i32)] = &[
     ("", "", 0),
     ("   ", "", 0),
     ("nosuchcmd_reef_test", "", 127),
+    ("echo hi", "hi\n", 0),
+    ("echo a'b'c", "abc\n", 0),
+    ("echo -n", "", 0),
+    ("echo -n abc", "abc", 0)
 ];
 
 #[test]
