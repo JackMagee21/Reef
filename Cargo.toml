@@ -6,6 +6,8 @@ description = "A POSIX-style shell written in Rust, native on Windows and Linux"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+ctrlc = "3.5.2"
+reedline = "0.52.1"
 
 [dev-dependencies]
 assert_cmd = "2"
