@@ -1,11 +1,14 @@
 mod builtins;
 mod io;
+mod lexer;
 mod platform;
 mod repl;
 mod shell;
+mod word;
 
 use io::Io;
 use shell::Shell;
+use word::Word;
 
 fn main() {
     // Ctrl-C goes to every process on the console. Reef ignores it so only the
@@ -38,9 +41,17 @@ fn main() {
     std::process::exit(sh.last_status);
 }
 
-// Placeholder until the lexer and parser exist. The spec tests stay the same when it's replaced.
+// Placeholder until the parser exists: one line is one simple command.
+// The spec tests stay the same when it's replaced.
 fn run(src: &str, sh: &mut Shell, io: &mut Io) -> i32 {
-    let argv: Vec<String> = src.split_whitespace().map(String::from).collect();
+    let words = match lexer::lex(src) {
+        Ok(words) => words,
+        Err(e) => {
+            let _ = io.write_err(format!("reef: syntax error: {e}\n").as_bytes());
+            return 2;
+        }
+    };
+    let argv: Vec<String> = words.iter().map(Word::to_plain).collect();
     let Some(name) = argv.first() else {
         return 0;
     };
