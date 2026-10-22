@@ -53,6 +53,11 @@ pub fn resolve(cwd: &Path, target: &str) -> PathBuf {
     cwd.join(target)
 }
 
+/// The file a redirect like `> target` opens, relative to `cwd`.
+pub fn redirect_path(cwd: &Path, target: &str) -> PathBuf {
+    resolve(cwd, target)
+}
+
 /// Reef's stdin as an unbuffered file, so reading it never reads ahead.
 pub fn stdin_file() -> std::io::Result<File> {
     Ok(File::from(std::io::stdin().as_fd().try_clone_to_owned()?))

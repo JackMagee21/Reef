@@ -111,6 +111,16 @@ pub fn resolve(cwd: &Path, target: &str) -> PathBuf {
     }
 }
 
+/// The file a redirect like `> target` opens. Relative to `cwd`, and
+/// `/dev/null` (written by scripts from Linux) means Windows' `NUL` device.
+pub fn redirect_path(cwd: &Path, target: &str) -> PathBuf {
+    if target == "/dev/null" || target.eq_ignore_ascii_case("nul") {
+        PathBuf::from(r"\\.\NUL")
+    } else {
+        resolve(cwd, target)
+    }
+}
+
 /// Reef's stdin as an unbuffered file, so reading it never reads ahead.
 pub fn stdin_file() -> std::io::Result<File> {
     Ok(File::from(
