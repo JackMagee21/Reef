@@ -44,9 +44,19 @@ fn is_os_cfg(line: &str) -> bool {
         .any(|c| line.contains(c));
     let has_os = line
         .split(|c: char| !c.is_alphanumeric() && c != '_')
-        .any(|w| w == "windows" || w == "unix");
+        .any(|w| OS_WORDS.contains(&w));
     has_cfg && has_os
 }
+
+/// Words that make a `cfg` OS-specific: `target_os = "linux"` slips past a check for just windows/unix.
+const OS_WORDS: &[&str] = &[
+    "windows",
+    "unix",
+    "target_os",
+    "target_family",
+    "target_env",
+    "target_vendor",
+];
 
 #[test]
 fn detects_every_cfg_form() {
@@ -54,6 +64,9 @@ fn detects_every_cfg_form() {
     assert!(is_os_cfg("if cfg!(unix) {"));
     assert!(is_os_cfg("#[cfg_attr(windows, allow(x))]"));
     assert!(is_os_cfg(r#"#[cfg(target_os = "windows")]"#));
+    assert!(is_os_cfg(r#"#[cfg(target_os = "linux")]"#));
+    assert!(is_os_cfg(r#"if cfg!(target_family = "wasm") {"#));
+    assert!(is_os_cfg(r#"#[cfg(target_env = "msvc")]"#));
     assert!(!is_os_cfg("#[cfg(test)]"));
     assert!(!is_os_cfg("// windows only"));
 }
