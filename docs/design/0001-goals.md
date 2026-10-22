@@ -7,7 +7,7 @@ Reef is the successor to RShell, rebuilt from the ground up.
 1. **Native Windows first.** Linux must pass CI on every push.
 2. **A documented POSIX sh subset.** What's missing is written down, not discovered.
 3. **`\` is always the POSIX escape.** Paths use `/` or quotes (`'C:\Users'`). Tab completion inserts `/`.
-4. **All OS-specific code lives in `src/platform/`.** Nothing else uses `#[cfg(windows)]` or `#[cfg(unix)]`. CI checks this.
+4. **All OS-specific code lives in `src/platform/`.** Nothing else uses `#[cfg(windows)]` or `#[cfg(unix)]`. `tests/layout.rs` checks this.
 5. **The shell owns its current directory** (`Shell::cwd`). Reef never calls `set_current_dir`, because builtins in pipelines run on threads that would share it.
 
 ## Lessons from RShell

@@ -3,7 +3,7 @@
 `src/platform/` is the only part of Reef that knows which operating system it's running on. Everything above it is the same on Windows and Linux.
 
 ```
-Reef logic (lexer, builtins, run, repl...)    no #[cfg] anywhere
+Reef logic (lexer, builtins, run, repl...)    no OS #[cfg] anywhere
         │  calls platform::find_command() etc.
         ▼
 platform/mod.rs     picks ONE of these when compiling
@@ -28,16 +28,20 @@ Rust's standard library already hides most OS differences (files, processes, env
 
 | Function | Windows | Linux |
 |---|---|---|
-| `find_command(name, path, cwd)` | tries each `PATHEXT` extension (`.exe`, `.cmd`, `.bat`...); a name typed with its extension is used as-is | the file must have an executable bit |
+| `find_command(name, sh)` | tries each extension in the shell's `PATHEXT` (`.exe`, `.cmd`, `.bat`...); a name typed with its extension is used as-is | the file must have an executable bit |
 | | a name containing `/` or `\` is looked up relative to `cwd`, not `PATH` | a name containing `/` is looked up relative to `cwd` |
-| `exit_status(status)` | Ctrl-C exit code `0xC000013A` becomes 130 | killed by signal N becomes 128 + N |
+| `exit_status(status)` | always 0-255. Crash codes become 128 + the matching Unix signal (Ctrl-C `0xC000013A` → 130, access violation `0xC0000005` → 139); other codes keep their low 8 bits (`300` → 44), and a failure never becomes 0 | killed by signal N becomes 128 + N |
 | `var_key(name)` | uppercases: `Path` and `PATH` are one variable | unchanged: names are case-sensitive |
+| `HOME_VARS` (a constant) | `HOME`, then `USERPROFILE`: where `cd` with no argument goes | `HOME` |
+| `resolve(cwd, target)` | `cwd.join(target)`, except that `C:` / `C:dir` use `cwd` if it's on drive C, else `C:\` (Windows would otherwise use the process's own directory, which Reef never changes) | `cwd.join(target)` |
+| `stdin_file()` | Reef's stdin as an unbuffered `File`, for piped mode | same |
+| `clean_path(path)` | removes the `\\?\` prefix `canonicalize` adds (`\\?\UNC\server\x` becomes `\\server\x`) | returns the path unchanged |
 
-**Planned:** console setup (UTF-8, VT mode), Ctrl-C details, `canonicalize` without the `\\?\` prefix, case-insensitive globbing on Windows, home and config directories, and job control (`fg`/`bg` on Linux only).
+**Planned:** console setup (UTF-8, VT mode), Ctrl-C details, case-insensitive globbing on Windows, home and config directories, and job control (`fg`/`bg` on Linux only).
 
 ## The rules
 
-1. **`#[cfg(windows)]` / `#[cfg(unix)]` only appear inside `src/platform/`.** CI runs a `grep` that fails the build if they appear anywhere else. If you need one somewhere else, a function is missing from this layer.
+1. **`#[cfg(windows)]` / `#[cfg(unix)]` only appear inside `src/platform/`.** `tests/layout.rs` fails `cargo test` if they appear anywhere else, including `cfg!(...)` and `cfg_attr(...)`. If you need one somewhere else, a function is missing from this layer.
 2. **Both files define the same functions with the same signatures.** Add to `windows.rs` and `unix.rs` together.
 3. **No shell logic here.** The layer answers OS questions ("where is this program?", "what does this exit code mean?"). Parsing, expansion and builtin behavior never move into it.
 

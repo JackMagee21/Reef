@@ -7,11 +7,13 @@ How a line of input travels through Reef today, and which file owns each step.
 | Command | What happens | Code |
 |---|---|---|
 | `reef` in a console | interactive `reef` prompt | `repl.rs` |
-| `reef` with piped input (`"echo hi" \| reef`) | each line of stdin runs as a command, like `sh` | `repl.rs` |
+| `reef` with piped input (`"echo hi" \| reef`) | each line of stdin runs as a command, like `sh`. Lines are read a byte at a time, so a program one line starts can read the lines after it, as in bash | `repl.rs` |
 | `reef -c "command"` | runs that one command and exits with its status | `main.rs` |
 | anything else | prints usage, exits with 2 | `main.rs` |
 
-At startup `main.rs` also installs a Ctrl-C handler that does nothing, so Ctrl-C stops the running program but never Reef itself.
+At startup `main.rs` also installs a Ctrl-C handler that does nothing, so Ctrl-C stops the running program but never Reef itself. Once loops and `read` exist, the handler must set a flag they check, or Ctrl-C could never stop them.
+
+`Shell::new` imports the environment (skipping any variable that isn't valid UTF-8, instead of crashing) and sets `PWD` to the real starting directory, since an inherited `PWD` can be missing or stale.
 
 ## How one line runs
 
@@ -52,12 +54,13 @@ exit status (i32)  →  Shell::last_status  ($?)
 
 ## `Shell`: what survives between commands
 
-Every command gets the same `&mut Shell`. That's how `cd` will change the directory for the next command, and how `$?` knows what the last one returned.
+Every command gets the same `&mut Shell`. That's how `cd` changes the directory for the next command, and how `$?` knows what the last one returned.
 
 | Field | Holds |
 |---|---|
 | `cwd` | the shell's current directory. Reef never calls `set_current_dir`; child programs get this directory explicitly |
 | `last_status` | the last exit status (`$?`) |
+| `exit_requested` | set by `exit`; the REPL and piped mode stop after the current command |
 | `vars` (private) | variables and whether each is exported. Only exported ones reach child programs. Names are case-insensitive on Windows |
 
 More fields (functions, aliases, positional arguments, options) are **planned** and get added when a feature needs them.
@@ -67,7 +70,7 @@ More fields (functions, aliases, positional arguments, options) are **planned** 
 ## How a command is found
 
 1. Is it a builtin? Look it up in the table in `builtins/mod.rs`.
-2. Otherwise, search `PATH` with `platform::find_command`. On Windows this tries every `PATHEXT` extension (`.exe`, `.cmd`, `.bat`...).
+2. Otherwise, search `PATH` with `platform::find_command`. On Windows this tries every `PATHEXT` extension (`.exe`, `.cmd`, `.bat`...). Both come from the shell's variables, not Reef's starting environment.
 3. Not found: print `reef: NAME: command not found`, status 127.
 
 External programs start with `Shell::cwd` as their directory, only the exported variables as their environment, and the `Io` streams as their stdin, stdout and stderr.
@@ -82,8 +85,8 @@ External programs start with `Shell::cwd` as their directory, only the exported 
 | 126 | found but couldn't be started |
 | 127 | command not found |
 | 130 | stopped by Ctrl-C |
-| 128 + N | (Linux) killed by signal N |
+| 128 + N | killed by signal N (Linux), or crashed (Windows: access violation → 139). `$?` is always 0-255 |
 
 ## Planned, in order
 
-Builtins `exit`, `pwd`, `cd` → operators and spans in the lexer → the parser (`|`, `&&`, `;`, redirects) → expansion (`$VAR`, `~`, globs) → pipelines → control flow and functions → editor features (history file, completion, highlighting).
+Operators and spans in the lexer → the parser (`|`, `&&`, `;`, redirects) → expansion (`$VAR`, `~`, globs) → pipelines → control flow and functions → editor features (history file, completion, highlighting).
