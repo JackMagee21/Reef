@@ -4,11 +4,12 @@
 //! pipes only ever change this file, never the builtins.
 
 use std::fmt;
+use std::fs::File;
 use std::io::{self, Write};
 use std::process::Stdio;
 
 /// Where one of a command's streams is connected.
-/// Later steps add `File`, `Null`, `Memory`, `PipeIn` and `PipeOut`.
+/// Later steps add `Memory`, `PipeIn` and `PipeOut`.
 pub enum Stream {
     /// Reef's own stdin.
     Stdin,
@@ -16,6 +17,8 @@ pub enum Stream {
     Stdout,
     /// Reef's own stderr.
     Stderr,
+    /// An open file, from `> out`, `>> log` or `< in`. `/dev/null` is one of these too.
+    File(File),
 }
 
 impl Stream {
@@ -26,6 +29,7 @@ impl Stream {
             Stream::Stdin => Stream::Stdin,
             Stream::Stdout => Stream::Stdout,
             Stream::Stderr => Stream::Stderr,
+            Stream::File(f) => Stream::File(f.try_clone()?),
         })
     }
 
@@ -35,6 +39,7 @@ impl Stream {
             Stream::Stdin => Stdio::inherit(),
             Stream::Stdout => Stdio::from(io::stdout()),
             Stream::Stderr => Stdio::from(io::stderr()),
+            Stream::File(f) => Stdio::from(f),
         }
     }
 
@@ -42,11 +47,24 @@ impl Stream {
         match self {
             Stream::Stdout => io::stdout().lock().write_all(bytes),
             Stream::Stderr => io::stderr().lock().write_all(bytes),
+            Stream::File(f) => f.write_all(bytes),
             Stream::Stdin => Err(io::Error::new(
                 io::ErrorKind::Unsupported,
                 "cannot write to stdin",
             )),
         }
+    }
+}
+
+/// An OS error in the words shells use (`No such file or directory`), rather
+/// than Rust's (`The system cannot find the file specified. (os error 2)`).
+pub fn describe_error(e: &io::Error) -> String {
+    match e.kind() {
+        io::ErrorKind::NotFound => "No such file or directory".into(),
+        io::ErrorKind::PermissionDenied => "Permission denied".into(),
+        io::ErrorKind::IsADirectory => "Is a directory".into(),
+        io::ErrorKind::NotADirectory => "Not a directory".into(),
+        _ => e.to_string(),
     }
 }
 
@@ -83,13 +101,42 @@ impl Io {
         let _ = self.write_err(format!("reef: {message}\n").as_bytes());
     }
 
+    /// A second `Io` pointing at the same places, e.g. to apply a command's redirects to.
+    pub fn try_clone(&self) -> io::Result<Io> {
+        Ok(Io {
+            stdin: self.stdin.try_clone()?,
+            stdout: self.stdout.try_clone()?,
+            stderr: self.stderr.try_clone()?,
+        })
+    }
+
+    /// Stream number `fd`: 0 is stdin, 1 stdout, 2 stderr. `None` above 2.
+    pub fn stream(&self, fd: u32) -> Option<&Stream> {
+        match fd {
+            0 => Some(&self.stdin),
+            1 => Some(&self.stdout),
+            2 => Some(&self.stderr),
+            _ => None,
+        }
+    }
+
+    pub fn stream_mut(&mut self, fd: u32) -> Option<&mut Stream> {
+        match fd {
+            0 => Some(&mut self.stdin),
+            1 => Some(&mut self.stdout),
+            2 => Some(&mut self.stderr),
+            _ => None,
+        }
+    }
+
     /// Handles for a child process: (stdin, stdout, stderr).
     /// Copies the streams, so this `Io` stays usable for the next command.
     pub fn for_child(&self) -> io::Result<(Stdio, Stdio, Stdio)> {
+        let copy = self.try_clone()?;
         Ok((
-            self.stdin.try_clone()?.into_stdio(),
-            self.stdout.try_clone()?.into_stdio(),
-            self.stderr.try_clone()?.into_stdio(),
+            copy.stdin.into_stdio(),
+            copy.stdout.into_stdio(),
+            copy.stderr.into_stdio(),
         ))
     }
 
