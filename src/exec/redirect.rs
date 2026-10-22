@@ -3,10 +3,10 @@
 use std::fs::OpenOptions;
 
 use crate::ast::Redirect;
-use crate::io::{Io, Stream, describe_error};
 use crate::lexer::Op;
 use crate::platform;
 use crate::shell::Shell;
+use crate::streams::{Io, Stream, describe_error};
 
 /// A copy of `io` with `redirects` applied left to right. Order matters:
 /// `> out 2>&1` sends both streams to `out`, but `2>&1 > out` points stderr at
@@ -17,7 +17,7 @@ use crate::shell::Shell;
 pub fn apply(redirects: &[Redirect], sh: &Shell, io: &Io) -> Result<Io, String> {
     let mut io = io.try_clone().map_err(|e| describe_error(&e))?;
     for r in redirects {
-        let target = r.target.to_plain();
+        let target = r.target.joined_text();
         let stream = match r.op {
             // `2>&1`: a copy of another stream, as it is right now
             Op::GreatAnd | Op::LessAnd => {
@@ -36,7 +36,7 @@ pub fn apply(redirects: &[Redirect], sh: &Shell, io: &Io) -> Result<Io, String> 
                     // `unsupported` rejects heredocs before anything runs
                     _ => return Err(format!("`{r}` is not supported yet")),
                 };
-                let path = platform::redirect_path(&sh.cwd, &target);
+                let path = platform::redirect_path(sh.cwd(), &target);
                 let file = options
                     .open(path)
                     .map_err(|e| format!("{target}: {}", describe_error(&e)))?;

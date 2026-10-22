@@ -28,11 +28,11 @@ Redirects apply **left to right**, and `2>&1` copies where stdout points *at tha
 | `cmd > out 2>&1` | `out` | `out` (copied after stdout moved) |
 | `cmd 2>&1 > out` | `out` | the screen (copied before stdout moved) |
 
-That's also why Reef's own stdout and stderr are separate `Stream` kinds (see [io.md](io.md)).
+That's also why Reef's own stdout and stderr are separate `Stream` kinds (see [streams.md](streams.md)).
 
 ## Paths
 
-- Relative to the shell's directory (`sh.cwd`), so `cd sub && echo hi > f` writes `sub/f`.
+- Relative to the shell's directory (`sh.cwd()`), so `cd sub && echo hi > f` writes `sub/f`.
 - `/dev/null` works on Windows too: the platform layer maps it (and `NUL`) to Windows' null device, so scripts written for Linux run unchanged.
 
 ## When a redirect fails

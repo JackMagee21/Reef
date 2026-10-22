@@ -105,6 +105,6 @@ impl fmt::Display for Redirect {
         if let Some(fd) = self.fd {
             write!(f, "{fd}")?;
         }
-        write!(f, "{}{}", self.op.as_str(), self.target.to_plain())
+        write!(f, "{}{}", self.op.as_str(), self.target.joined_text())
     }
 }

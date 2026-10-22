@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::platform;
 
@@ -8,13 +8,15 @@ use crate::platform;
 #[derive(Clone)]
 pub struct Shell {
     /// The shell's own directory. Reef never calls `set_current_dir`;
-    /// children get this via `Command::current_dir`.
-    pub cwd: PathBuf,
-    /// `$?`
+    /// children get this via `Command::current_dir`. Private so every change
+    /// goes through `set_cwd`, which keeps `$PWD` and `$OLDPWD` in step.
+    cwd: PathBuf,
+    /// `$?`. Written by `exec` after every pipeline (and when a line can't run
+    /// at all), and by the prompt for Ctrl-C. Everything else only reads it.
     pub last_status: i32,
-    /// Set by `exit`. Whatever is running commands stops after the current one;
-    /// builtins never call `process::exit` themselves.
-    pub exit_requested: bool,
+    /// Reef should stop after the current command: set by `exit`, and by a
+    /// syntax error in a script. Builtins never call `process::exit` themselves.
+    pub stop_requested: bool,
     /// True at the prompt. A syntax error stops a script or `-c`, but not the prompt.
     pub interactive: bool,
     /// Private so every write goes through `set_var` and its rules.
@@ -38,7 +40,7 @@ impl Shell {
                 std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             ),
             last_status: 0,
-            exit_requested: false,
+            stop_requested: false,
             interactive: false,
             vars: HashMap::new(),
         };
@@ -53,6 +55,18 @@ impl Shell {
         let pwd = sh.cwd.display().to_string();
         sh.set_var("PWD", pwd, true);
         sh
+    }
+
+    pub fn cwd(&self) -> &Path {
+        &self.cwd
+    }
+
+    /// Change the shell's directory, updating `$OLDPWD` and `$PWD` with it
+    /// (programs read `$PWD`, and `cd -` reads `$OLDPWD`).
+    pub fn set_cwd(&mut self, new: PathBuf) {
+        let old = std::mem::replace(&mut self.cwd, new);
+        self.set_var("OLDPWD", old.display().to_string(), true);
+        self.set_var("PWD", self.cwd.display().to_string(), true);
     }
 
     pub fn var(&self, name: &str) -> Option<&str> {

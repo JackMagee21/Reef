@@ -48,8 +48,10 @@ impl Word {
         }
     }
 
-    // shortcut: joins the parts as-is; the expander replaces this once $x and globs exist
-    pub fn to_plain(&self) -> String {
+    /// Every part's text joined, ignoring quoting: `a'b'c` is `abc`. Compare
+    /// `as_unquoted`, which only answers for a word with no quoting at all.
+    // shortcut: the expander replaces this once $x and globs exist
+    pub fn joined_text(&self) -> String {
         self.parts
             .iter()
             .map(|p| match p {

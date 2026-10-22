@@ -5,8 +5,8 @@ mod false_cmd;
 mod pwd;
 mod true_cmd;
 
-use crate::io::Io;
 use crate::shell::Shell;
+use crate::streams::Io;
 
 pub type Builtin = fn(&mut Shell, &[String], &mut Io) -> i32;
 

@@ -6,17 +6,19 @@ use reedline::{
     DefaultPrompt, DefaultPromptSegment, Reedline, Signal, ValidationResult, Validator,
 };
 
-use crate::io::Io;
+use crate::exec;
 use crate::parser::{self, ParseError};
 use crate::platform;
 use crate::shell::Shell;
+use crate::status;
+use crate::streams::Io;
 
-/// Run one complete command and record its status in `$?`. Returns true when
-/// `exit` (or a script's syntax error) asked Reef to stop. The prompt and piped
+/// Run one complete command (its status lands in `$?`). Returns true when
+/// `exit` or a script's syntax error asked Reef to stop. The prompt and piped
 /// mode both go through here, so they can't drift apart.
-fn execute(src: &str, sh: &mut Shell, io: &mut Io) -> bool {
-    sh.last_status = crate::run(src, sh, io);
-    sh.exit_requested
+fn run_one(src: &str, sh: &mut Shell, io: &mut Io) -> bool {
+    exec::run_source(src, sh, io);
+    sh.stop_requested
 }
 
 /// True when `src` stops in the middle of a command (`echo a &&`, `{ echo`, an
@@ -42,7 +44,7 @@ impl Validator for Continue {
 
 /// Interactive when stdin is a console, otherwise run each line of stdin like a script.
 /// Returns the status Reef should exit with.
-pub fn run(sh: &mut Shell, io: &mut Io) -> i32 {
+pub fn start(sh: &mut Shell, io: &mut Io) -> i32 {
     if std::io::stdin().is_terminal() {
         interactive(sh, io)
     } else {
@@ -79,7 +81,7 @@ fn interactive(sh: &mut Shell, io: &mut Io) -> i32 {
 fn on_signal(signal: Signal, sh: &mut Shell, io: &mut Io) -> Option<i32> {
     match signal {
         Signal::Success(line) => {
-            let stop = execute(&line, sh, io);
+            let stop = run_one(&line, sh, io);
             // `echo -n hi` must show before the next prompt is drawn
             if let Err(e) = io.flush() {
                 eprintln!("reef: {e}");
@@ -88,7 +90,7 @@ fn on_signal(signal: Signal, sh: &mut Shell, io: &mut Io) -> Option<i32> {
         }
         // Ctrl-C at the prompt cancels the line, like bash
         Signal::CtrlC => {
-            sh.last_status = 130;
+            sh.last_status = status::INTERRUPTED;
             None
         }
         Signal::CtrlD => Some(sh.last_status),
@@ -126,7 +128,7 @@ fn piped(sh: &mut Shell, io: &mut Io) -> i32 {
                 return 1;
             }
         }
-        if execute(&std::mem::take(&mut cmd), sh, io) {
+        if run_one(&std::mem::take(&mut cmd), sh, io) {
             break;
         }
     }

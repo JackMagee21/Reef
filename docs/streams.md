@@ -1,6 +1,6 @@
 # Io and Stream
 
-`src/io.rs` decides where a command's input and output go. Every command, builtin or external, gets an `Io` with three streams: `stdin`, `stdout` and `stderr`.
+`src/streams.rs` decides where a command's input and output go. Every command, builtin or external, gets an `Io` with three streams: `stdin`, `stdout` and `stderr`.
 
 ## Why builtins never print directly
 
@@ -43,4 +43,4 @@ Reef's own stdout and stderr are separate kinds, not one "terminal" kind. With `
 
 ## Adding a new stream kind (planned work)
 
-Add the variant, then one arm in each of `try_clone`, `into_stdio` and `write_all`. The compiler lists every `match` that needs it. Nothing outside `io.rs` changes.
+Add the variant, then one arm in each of `try_clone`, `into_stdio` and `write_all`. The compiler lists every `match` that needs it. Nothing outside `streams.rs` changes.

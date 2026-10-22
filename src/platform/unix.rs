@@ -15,7 +15,7 @@ use crate::shell::Shell;
 /// Empty and relative `PATH` entries are relative to `sh.cwd`, not Reef's start directory.
 pub fn find_command(name: &str, sh: &Shell) -> Option<PathBuf> {
     if name.contains('/') {
-        let path = sh.cwd.join(name);
+        let path = sh.cwd().join(name);
         return path.exists().then_some(path);
     }
     let is_exec = |p: &PathBuf| {
@@ -23,7 +23,7 @@ pub fn find_command(name: &str, sh: &Shell) -> Option<PathBuf> {
             .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
     };
     std::env::split_paths(sh.var("PATH").unwrap_or_default())
-        .map(|dir| sh.cwd.join(dir).join(name))
+        .map(|dir| sh.cwd().join(dir).join(name))
         .find(is_exec)
 }
 

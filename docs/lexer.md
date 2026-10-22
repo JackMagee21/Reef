@@ -47,7 +47,7 @@ A word isn't a plain string. It's a list of parts, and each part remembers wheth
 a'b'c   →   one Word:  [ "a" (unquoted), "b" (quoted), "c" (unquoted) ]
 ```
 
-Today the parts are simply joined (`Word::to_plain`) before running the command. The flag matters later: `$HOME` and `*.rs` will expand when unquoted, but `'$HOME'` and `"*.rs"` must not. RShell turned everything into plain strings straight away, and that's why its `'$HOME'` still expanded.
+Today the parts are simply joined (`Word::joined_text`) before running the command. The flag matters later: `$HOME` and `*.rs` will expand when unquoted, but `'$HOME'` and `"*.rs"` must not. RShell turned everything into plain strings straight away, and that's why its `'$HOME'` still expanded.
 
 ## The rules
 

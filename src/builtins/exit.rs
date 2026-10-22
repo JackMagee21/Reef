@@ -1,11 +1,12 @@
 //! `exit`: stop the shell.
 
-use crate::io::Io;
 use crate::shell::Shell;
+use crate::status;
+use crate::streams::Io;
 
 /// `exit [n]`: exit with `n` (mod 256), or with `$?` when no `n` is given.
 ///
-/// Only sets `sh.exit_requested`; whatever runs commands stops after this one.
+/// Only sets `sh.stop_requested`; whatever runs commands stops after this one.
 /// Calling `process::exit` here would skip the final flush, and would kill the
 /// whole shell from inside a subshell.
 pub fn exit(sh: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
@@ -15,8 +16,8 @@ pub fn exit(sh: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
             // A bad number still exits, like bash
             Err(_) => {
                 io.error(format_args!("exit: {arg}: numeric argument required"));
-                sh.exit_requested = true;
-                return 2;
+                sh.stop_requested = true;
+                return status::SYNTAX_ERROR;
             }
             // Too many arguments is an error that does NOT exit, like bash
             Ok(_) if argv.len() > 2 => {
@@ -26,6 +27,6 @@ pub fn exit(sh: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
             Ok(n) => n.rem_euclid(256) as i32,
         },
     };
-    sh.exit_requested = true;
+    sh.stop_requested = true;
     code
 }

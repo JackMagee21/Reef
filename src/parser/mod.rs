@@ -22,24 +22,38 @@ pub enum ParseError {
     Incomplete(String),
     /// Wrong input, pointing at the token where it went wrong.
     Syntax { message: String, span: Span },
+    /// Valid shell, but a feature Reef doesn't have yet: `if`, `while`, `case`...
+    NotYet { what: String, span: Span },
 }
 
 impl ParseError {
+    /// What kind of problem it is, to put before the message: `syntax error` or `not supported yet`.
+    pub fn label(&self) -> &'static str {
+        match self {
+            ParseError::Incomplete(_) | ParseError::Syntax { .. } => "syntax error",
+            ParseError::NotYet { .. } => "not supported yet",
+        }
+    }
+
     /// The message to show. Needs the source to turn the span into a line and column.
     pub fn describe(&self, src: &str) -> String {
         match self {
             ParseError::Incomplete(what) => format!("unexpected end of input: {what}"),
-            ParseError::Syntax { message, span } => {
-                let before = &src[..span.start];
-                let line = before.matches('\n').count() + 1;
-                let column = before.rsplit('\n').next().unwrap_or("").chars().count() + 1;
-                if line == 1 {
-                    format!("{message} (column {column})")
-                } else {
-                    format!("{message} (line {line}, column {column})")
-                }
-            }
+            ParseError::Syntax { message, span } => format!("{message} {}", position(src, *span)),
+            ParseError::NotYet { what, span } => format!("{what} {}", position(src, *span)),
         }
+    }
+}
+
+/// `(column 8)`, or `(line 2, column 3)` when the input has several lines.
+fn position(src: &str, span: Span) -> String {
+    let before = &src[..span.start];
+    let line = before.matches('\n').count() + 1;
+    let column = before.rsplit('\n').next().unwrap_or("").chars().count() + 1;
+    if line == 1 {
+        format!("(column {column})")
+    } else {
+        format!("(line {line}, column {column})")
     }
 }
 
@@ -95,13 +109,20 @@ impl Parser<'_> {
             }
 
             let and_or = self.and_or()?;
-            let background = self.peek_op() == Some(Op::Amp);
-            match self.peek_op() {
-                Some(Op::Amp | Op::Semi | Op::Newline) => self.pos += 1,
+            // What ends the command: `&` (run it in the background), `;` or a newline
+            let background = match self.peek_op() {
+                Some(Op::Amp) => {
+                    self.pos += 1;
+                    true
+                }
+                Some(Op::Semi | Op::Newline) => {
+                    self.pos += 1;
+                    false
+                }
                 // The end, `)` or `}`: the top of the loop decides if that's allowed
-                _ if self.peek().is_none() || self.peek_closer().is_some() => {}
+                _ if self.peek().is_none() || self.peek_closer().is_some() => false,
                 _ => return self.unexpected(),
-            }
+            };
             items.push(Item { and_or, background });
         }
     }
@@ -129,7 +150,7 @@ impl Parser<'_> {
     }
 
     fn pipeline(&mut self) -> Result<Pipeline, ParseError> {
-        let negated = self.peek_plain_word() == Some("!");
+        let negated = self.peek_unquoted_word() == Some("!");
         if negated {
             self.pos += 1;
             self.need_command("!")?;
@@ -153,24 +174,27 @@ impl Parser<'_> {
             TokenKind::Op(op) => Some(op),
             _ => None,
         };
-        let word = self.peek_plain_word();
+        let word = self.peek_unquoted_word();
 
         if op == Some(Op::LParen) {
             self.pos += 1;
             let body = self.list(Some(Closer::Paren))?;
-            self.pos += 1; // the `)`: list only returns when it's next
+            self.close(Closer::Paren)?;
             let redirects = self.redirects()?;
             return Ok(Command::Subshell { body, redirects });
         }
         if word == Some("{") {
             self.pos += 1;
             let body = self.list(Some(Closer::Brace))?;
-            self.pos += 1; // the `}`
+            self.close(Closer::Brace)?;
             let redirects = self.redirects()?;
             return Ok(Command::Group { body, redirects });
         }
         if let Some(w) = word.filter(|w| NOT_YET.contains(w)) {
-            return Err(syntax(format!("`{w}` is not supported yet"), span));
+            return Err(ParseError::NotYet {
+                what: format!("`{w}`"),
+                span,
+            });
         }
         if word == Some("}") || op.is_some_and(|op| !op.is_redirect()) {
             return self.unexpected();
@@ -256,7 +280,7 @@ impl Parser<'_> {
 
     /// The next token's text if it's an unquoted plain word. Reserved words like
     /// `{` and `!` only count when written exactly like that: `'{'` is just text.
-    fn peek_plain_word(&self) -> Option<&str> {
+    fn peek_unquoted_word(&self) -> Option<&str> {
         match &self.peek()?.kind {
             TokenKind::Word(w) => w.as_unquoted(),
             _ => None,
@@ -267,7 +291,7 @@ impl Parser<'_> {
     fn peek_closer(&self) -> Option<Closer> {
         if self.peek_op() == Some(Op::RParen) {
             Some(Closer::Paren)
-        } else if self.peek_plain_word() == Some("}") {
+        } else if self.peek_unquoted_word() == Some("}") {
             Some(Closer::Brace)
         } else {
             None
@@ -277,6 +301,16 @@ impl Parser<'_> {
     fn skip_newlines(&mut self) {
         while self.peek_op() == Some(Op::Newline) {
             self.pos += 1;
+        }
+    }
+
+    /// Step past the `)` or `}` that ends a group, checking it's really there.
+    fn close(&mut self, closer: Closer) -> Result<(), ParseError> {
+        if self.peek_closer() == Some(closer) {
+            self.pos += 1;
+            Ok(())
+        } else {
+            self.unexpected()
         }
     }
 
@@ -363,7 +397,7 @@ mod tests {
             Command::Simple { words, .. } => {
                 let parts: Vec<String> = words
                     .iter()
-                    .map(Word::to_plain)
+                    .map(Word::joined_text)
                     .chain(c.redirects().iter().map(Redirect::to_string))
                     .collect();
                 format!("[{}]", parts.join(" "))
@@ -451,8 +485,12 @@ mod tests {
         assert_eq!(err("a | }"), "unexpected `}` (column 5)");
         assert_eq!(err("a > ;"), "`>` needs a file name after it (column 3)");
         assert_eq!(err("a 2>"), "`>` needs a file name after it (column 4)");
-        assert_eq!(err("while x"), "`while` is not supported yet (column 1)");
-        assert_eq!(err("a; fi"), "`fi` is not supported yet (column 4)");
+        assert_eq!(err("while x"), "`while` (column 1)");
+        let label = |src| parse(src).err().unwrap().label();
+        assert_eq!(label("while x"), "not supported yet");
+        assert_eq!(label("a ;;"), "syntax error");
+        assert_eq!(label("a &&"), "syntax error");
+        assert_eq!(err("a; fi"), "`fi` (column 4)");
         assert_eq!(err("a\nb )"), "unexpected `)` (line 2, column 3)");
     }
 }

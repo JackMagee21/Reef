@@ -30,9 +30,8 @@ impl fmt::Display for LexError {
 
 pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
     let mut tokens = Vec::new();
-    // The word being built and the byte where it started.
-    // `Some` as soon as anything (even `''`) starts it.
-    let mut cur: Option<(usize, Word)> = None;
+    // The word being built. `Some` as soon as anything (even `''`) starts it.
+    let mut cur: Option<Pending> = None;
     let mut chars = src.char_indices().peekable();
 
     while let Some((i, c)) = chars.next() {
@@ -44,41 +43,13 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
             // The comment stops before the newline, which is still a token.
             '#' if cur.is_none() => while chars.next_if(|&(_, c)| c != '\n').is_some() {},
 
-            // Single quotes: everything up to the next `'` is literal, no exceptions
             '\'' => {
-                let mut text = String::new();
-                loop {
-                    match chars.next() {
-                        Some((_, '\'')) => break,
-                        Some((_, c)) => text.push(c),
-                        None => return Err(LexError::Incomplete("unclosed '")),
-                    }
-                }
+                let text = read_single_quoted(&mut chars)?;
                 word(&mut cur, i).push_str(&text, true);
             }
 
-            // Double quotes: literal except that `\` escapes $ ` " \ and newline
             '"' => {
-                let mut text = String::new();
-                loop {
-                    match chars.next() {
-                        Some((_, '"')) => break,
-                        Some((_, '\\')) => match chars.peek() {
-                            Some(&(_, n @ ('$' | '`' | '"' | '\\'))) => {
-                                chars.next();
-                                text.push(n);
-                            }
-                            // backslash-newline is a line continuation: both disappear
-                            Some((_, '\n')) => {
-                                chars.next();
-                            }
-                            // any other backslash stays as-is: "a\b" is a\b
-                            _ => text.push('\\'),
-                        },
-                        Some((_, c)) => text.push(c),
-                        None => return Err(LexError::Incomplete("unclosed \"")),
-                    }
-                }
+                let text = read_double_quoted(&mut chars)?;
                 word(&mut cur, i).push_str(&text, true);
             }
 
@@ -99,11 +70,11 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
                 let op = read_op(c, &mut chars);
                 // `2>file`: unquoted digits right before a redirect name a file descriptor
                 if op.is_redirect()
-                    && let Some((start, w)) = &cur
-                    && let Some(n) = io_number(w)
+                    && let Some(pending) = &cur
+                    && let Some(n) = io_number(&pending.word)
                 {
                     let span = Span {
-                        start: *start,
+                        start: pending.start,
                         end: i,
                     };
                     tokens.push(Token {
@@ -129,19 +100,67 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
     Ok(tokens)
 }
 
+/// A word still being built, and the byte where it started (for its span).
+struct Pending {
+    start: usize,
+    word: Word,
+}
+
 /// The word being built, starting one at byte `i` if there isn't one yet.
-fn word(cur: &mut Option<(usize, Word)>, i: usize) -> &mut Word {
-    &mut cur.get_or_insert_with(|| (i, Word::default())).1
+fn word(cur: &mut Option<Pending>, i: usize) -> &mut Word {
+    &mut cur
+        .get_or_insert_with(|| Pending {
+            start: i,
+            word: Word::default(),
+        })
+        .word
 }
 
 /// Push the word being built (if any) as a token ending at byte `end`.
-fn end_word(tokens: &mut Vec<Token>, cur: &mut Option<(usize, Word)>, end: usize) {
-    if let Some((start, w)) = cur.take() {
-        let span = Span { start, end };
+fn end_word(tokens: &mut Vec<Token>, cur: &mut Option<Pending>, end: usize) {
+    if let Some(Pending { start, word }) = cur.take() {
         tokens.push(Token {
-            kind: TokenKind::Word(w),
-            span,
+            kind: TokenKind::Word(word),
+            span: Span { start, end },
         });
+    }
+}
+
+/// The text after an opening `'`, up to the closing one. Everything in between
+/// is literal, no exceptions.
+fn read_single_quoted(chars: &mut Peekable<CharIndices>) -> Result<String, LexError> {
+    let mut text = String::new();
+    loop {
+        match chars.next() {
+            Some((_, '\'')) => return Ok(text),
+            Some((_, c)) => text.push(c),
+            None => return Err(LexError::Incomplete("unclosed '")),
+        }
+    }
+}
+
+/// The text after an opening `"`, up to the closing one. Literal, except that
+/// `\` escapes `$`, `` ` ``, `"`, `\` and newline.
+fn read_double_quoted(chars: &mut Peekable<CharIndices>) -> Result<String, LexError> {
+    let mut text = String::new();
+    loop {
+        match chars.next() {
+            Some((_, '"')) => return Ok(text),
+            Some((_, '\\')) => match chars.peek() {
+                Some(&(_, n @ ('$' | '`' | '"' | '\\'))) => {
+                    chars.next();
+                    text.push(n);
+                }
+                // backslash-newline is a line continuation: both disappear
+                Some((_, '\n')) => {
+                    chars.next();
+                }
+                // any other backslash stays as-is: "a\b" is a\b
+                _ => text.push('\\'),
+            },
+            Some((_, c)) => text.push(c),
+            None => return Err(LexError::Incomplete("unclosed \"")),
+        }
     }
 }
 
@@ -195,7 +214,7 @@ mod tests {
             .unwrap()
             .into_iter()
             .filter_map(|t| match t.kind {
-                TokenKind::Word(w) => Some(w.to_plain()),
+                TokenKind::Word(w) => Some(w.joined_text()),
                 TokenKind::Op(Op::Newline) => None,
                 other => panic!("unexpected {other:?} in {src:?}"),
             })
@@ -215,7 +234,7 @@ mod tests {
             .unwrap()
             .into_iter()
             .map(|t| match t.kind {
-                TokenKind::Word(w) => K::W(w.to_plain()),
+                TokenKind::Word(w) => K::W(w.joined_text()),
                 TokenKind::Op(op) => K::O(op),
                 TokenKind::IoNumber(n) => K::N(n),
             })

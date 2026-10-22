@@ -1,7 +1,7 @@
 //! `echo`: print the arguments.
 
-use crate::io::Io;
 use crate::shell::Shell;
+use crate::streams::Io;
 
 /// `echo [-n] [args...]`: the arguments joined by single spaces, then a
 /// newline unless `-n` is given.

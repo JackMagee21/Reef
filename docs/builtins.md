@@ -15,14 +15,14 @@ A builtin is a command Reef runs itself, as a Rust function, instead of starting
 | `echo [-n] [args...]` | `builtins/echo.rs` | arguments joined by single spaces, then a newline unless the **first** argument is exactly `-n`. No escape sequences (`\n`) and no other options, on purpose: shells disagree about them, and scripts use `printf` (planned) instead |
 | `true` / `false` | `builtins/true_cmd.rs`, `false_cmd.rs` | ignore their arguments, return 0 / 1 |
 | `exit [n]` | `builtins/exit.rs` | exits with `n` mod 256 (`exit 300` → 44, `exit -1` → 255), or with `$?` when no `n` is given. `exit abc` prints an error and exits with 2. `exit 1 2` prints "too many arguments", returns 1 and does **not** exit |
-| `pwd` | `builtins/pwd.rs` | prints `sh.cwd`. `-L`/`-P` are ignored |
-| `cd [dir \| -]` | `builtins/cd.rs` | no argument: `$HOME` (on Windows, `$USERPROFILE` if `HOME` is unset). `-`: `$OLDPWD`, and prints it. Paths are relative to `sh.cwd`. **Physical**: `..` is the real parent, even through a symlink. On success sets `PWD` and `OLDPWD` (exported). On failure prints why, returns 1 and stays put |
+| `pwd` | `builtins/pwd.rs` | prints `sh.cwd()`. `-L`/`-P` are ignored |
+| `cd [dir \| -]` | `builtins/cd.rs` | no argument: `$HOME` (on Windows, `$USERPROFILE` if `HOME` is unset). `-`: `$OLDPWD`, and prints it. Paths are relative to `sh.cwd()`. **Physical**: `..` is the real parent, even through a symlink. On success sets `PWD` and `OLDPWD` (exported). On failure prints why, returns 1 and stays put |
 
 `echo hi -n` prints `hi -n`, because `-n` only counts as the first argument.
 
 ### How `exit` stops the shell
 
-`exit` never calls `std::process::exit`. That would skip the final flush, and later it would kill the whole shell from inside a subshell. Instead it sets `sh.exit_requested`, and whatever is running commands (the REPL loop, piped mode, later the executor) stops after the current command and exits with its status.
+`exit` never calls `std::process::exit`. That would skip the final flush, and later it would kill the whole shell from inside a subshell. Instead it sets `sh.stop_requested`, and whatever is running commands (the prompt, piped mode, the executor) stops after the current command and exits with its status.
 
 ## The shape every builtin has
 
@@ -36,7 +36,7 @@ Unused parameters get a leading `_` (for example `_sh`). Keeping one shape means
 
 ## The table
 
-`builtins/mod.rs` has `BUILTINS`, the **only** list of builtins in Reef, and `lookup(name)`, which `run()` calls before searching `PATH`. Later, completion, `type`, `which` and "did you mean" will read this same list. RShell had three separate lists that disagreed with each other.
+`builtins/mod.rs` has `BUILTINS`, the **only** list of builtins in Reef, and `lookup(name)`, which the executor calls before searching `PATH`. Later, completion, `type`, `which` and "did you mean" will read this same list. RShell had three separate lists that disagreed with each other.
 
 ## Adding a builtin
 

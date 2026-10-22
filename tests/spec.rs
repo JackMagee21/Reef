@@ -194,22 +194,22 @@ const ERRORS: &[(&str, &str, i32)] = &[
     // Parsed, but running them needs new Io streams (change these when they land)
     (
         "echo é | x",
-        "reef: syntax error: pipelines (`|`) are not supported yet\n",
+        "reef: not supported yet: pipelines (`|`)\n",
         2,
     ),
     (
         "cat <<EOF",
-        "reef: syntax error: heredocs (`<<EOF`) are not supported yet\n",
+        "reef: not supported yet: heredocs (`<<EOF`)\n",
         2,
     ),
     (
         "echo hi 3>x",
-        "reef: syntax error: file descriptors above 2 (`3>x`) are not supported yet\n",
+        "reef: not supported yet: file descriptors above 2 (`3>x`)\n",
         2,
     ),
     (
         "echo hi >&-",
-        "reef: syntax error: closing file descriptors (`>&-`) is not supported yet\n",
+        "reef: not supported yet: closing file descriptors (`>&-`)\n",
         2,
     ),
     // Redirect errors: the command doesn't run, status 1
@@ -226,12 +226,12 @@ const ERRORS: &[(&str, &str, i32)] = &[
     ("nosuchcmd_reef_test 2>/dev/null", "", 127),
     (
         "true &",
-        "reef: syntax error: background jobs (`&`) are not supported yet\n",
+        "reef: not supported yet: background jobs (`&`)\n",
         2,
     ),
     (
         "if true; then echo; fi",
-        "reef: syntax error: `if` is not supported yet (column 1)\n",
+        "reef: not supported yet: `if` (column 1)\n",
         2,
     ),
     // Syntax errors point at the column
@@ -286,7 +286,7 @@ const ERRORS: &[(&str, &str, i32)] = &[
     // An error stops the whole -c line before anything runs
     (
         "echo first; echo a | b",
-        "reef: syntax error: pipelines (`|`) are not supported yet\n",
+        "reef: not supported yet: pipelines (`|`)\n",
         2,
     ),
 ];

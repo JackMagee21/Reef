@@ -74,8 +74,8 @@ These parse fully, but each needs new kinds of `Io` stream before it can run, so
 
 | Input | Message |
 |---|---|
-| `a \| b` | `pipelines (`\|`) are not supported yet` |
-| `sleep 1 &` | `background jobs (`&`) are not supported yet` |
+| `a \| b` | `not supported yet: pipelines (`\|`)` |
+| `sleep 1 &` | `not supported yet: background jobs (`&`)` |
 
 Redirects run; [redirects.md](redirects.md) covers them, including the few forms (heredocs, `3>`, `>&-`) that are still an error.
 
@@ -83,7 +83,7 @@ They're checked for the **whole input before anything runs**, so `echo first; ec
 
 ## Not done yet (planned)
 
-- **Running pipes and `&`**: new `Stream` kinds in `io.rs` (see [io.md](io.md)).
+- **Running pipes and `&`**: new `Stream` kinds in `streams.rs` (see [streams.md](streams.md)).
 - **Control flow**: `if`, `while`, `until`, `for`, `case`, and functions.
 - **Heredoc bodies**: `<<` parses, but the lines after it aren't read yet.
 - **Variable assignments**: `x=1 cmd`.

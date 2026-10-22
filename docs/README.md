@@ -8,7 +8,7 @@ Start with [architecture.md](architecture.md). It shows how a line of input trav
 | [lexer.md](lexer.md) | know exactly how Reef splits a line into words and operators, and handles quotes |
 | [parser.md](parser.md) | know the grammar, the error messages, and how `;`, `&&`, `\|\|`, `{ }` and `( )` run |
 | [builtins.md](builtins.md) | add a new builtin command |
-| [io.md](io.md) | understand why builtins never print directly, and what a `Stream` can be |
+| [streams.md](streams.md) | understand why builtins never print directly, and what a `Stream` can be |
 | [redirects.md](redirects.md) | know how `>`, `>>`, `<` and `2>&1` behave, and what isn't supported yet |
 | [platform.md](platform.md) | add or change anything that differs between Windows and Linux |
 | [testing.md](testing.md) | run the tests or add new ones |

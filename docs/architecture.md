@@ -8,7 +8,7 @@ How a line of input travels through Reef today, and which file owns each step.
 |---|---|---|
 | `reef` in a console | interactive `reef` prompt | `repl.rs` |
 | `reef` with piped input (`"echo hi" \| reef`) | each line of stdin runs as a command, like `sh`. A quote left open or a line ending in `\` carries on to the next line. A syntax error stops the script with status 2. Lines are read a byte at a time, so a program one line starts can read the lines after it, as in bash | `repl.rs` |
-| `reef -c "command"` | runs that one command and exits with its status | `main.rs` |
+| `reef -c "command"` | runs that one command and exits with its status | `main.rs`, `exec::run_source` |
 | anything else | prints usage, exits with 2 | `main.rs` |
 
 At startup `main.rs` also installs a Ctrl-C handler that does nothing, so Ctrl-C stops the running program but never Reef itself. Once loops and `read` exist, the handler must set a flag they check, or Ctrl-C could never stop them.
@@ -27,14 +27,14 @@ lexer::lex()            src/lexer/mod.rs    text → tokens (words + operators, 
 parser::parse()         src/parser/mod.rs   tokens → tree (List, AndOr, Pipeline, Command)
       │                                      unfinished → more lines; wrong → syntax error, 2
       ▼
-exec::unsupported()     src/exec/mod.rs     pipes, `&`, heredocs → "not supported yet"
+check_supported()       src/exec/mod.rs     pipes, `&`, heredocs → "not supported yet"
       │                                      (checked before anything runs)
       ▼
 exec::list()            src/exec/mod.rs     walk the tree: `;` `&&` `||` `!` `{ }` `( )`,
       │                                      each command's redirects (exec/redirect.rs)
       │
       ▼  each simple command
-Word::to_plain()        src/word.rs         Words → plain strings      (until expansion)
+Word::joined_text()     src/word.rs         Words → plain strings      (until expansion)
       │
       ├── builtin?      src/builtins/       call it with (Shell, args, Io)
       │
@@ -44,16 +44,17 @@ Word::to_plain()        src/word.rs         Words → plain strings      (until 
 exit status (i32)  →  Shell::last_status  ($?)
 ```
 
-`run()` in `main.rs` ties it together: parse, check, run. See [parser.md](parser.md) for the grammar and how each construct runs.
+`exec::run_source()` ties it together: parse, check, run. The prompt, piped mode and `-c` all go through it. See [parser.md](parser.md) for the grammar and how each construct runs.
 
 ## The pieces
 
 | File | Owns | Depends on the OS? |
 |---|---|---|
-| `main.rs` | startup, argument handling, `run()` (parse, check, run) | no |
+| `main.rs` | startup and argument handling only | no |
+| `status.rs` | the exit statuses with a fixed meaning (`SYNTAX_ERROR`, `NOT_FOUND`...) and `negate` for `!` | no |
 | `parser/mod.rs` | `parse()`: tokens into a tree, with incomplete and syntax errors | no |
 | `ast.rs` | the tree types: `List`, `Item`, `AndOr`, `Pipeline`, `Command`, `Redirect` | no |
-| `exec/mod.rs` | running the tree, and starting builtins and programs | no |
+| `exec/mod.rs` | `run_source` (parse, check, run), walking the tree, and starting builtins and programs | no |
 | `exec/redirect.rs` | turning a command's redirects into the `Io` it runs with | no |
 | `repl.rs` | the prompt loop (reedline) and piped-stdin mode | no |
 | `shell.rs` | `Shell`: state that survives between commands | no |
@@ -61,7 +62,7 @@ exit status (i32)  →  Shell::last_status  ($?)
 | `lexer/mod.rs` | `lex()`: text into tokens, following POSIX quoting | no |
 | `lexer/token.rs` | `Token`, `TokenKind`, `Op`, `Span` | no |
 | `builtins/` | commands Reef runs itself, and the one table of them | no |
-| `io.rs` | `Io` and `Stream`: where a command's input and output go | no |
+| `streams.rs` | `Io` and `Stream`: where a command's input and output go | no |
 | `platform/` | everything that differs between Windows and Linux | **yes, only here** |
 
 ## `Shell`: what survives between commands
@@ -70,9 +71,9 @@ Every command gets the same `&mut Shell`. That's how `cd` changes the directory 
 
 | Field | Holds |
 |---|---|
-| `cwd` | the shell's current directory. Reef never calls `set_current_dir`; child programs get this directory explicitly |
-| `last_status` | the last exit status (`$?`) |
-| `exit_requested` | set by `exit`, and by a syntax error when not interactive; the REPL and piped mode stop after the current command |
+| `cwd` (private) | the shell's current directory, read with `cwd()`. Change it only with `set_cwd()`, which keeps `$PWD` and `$OLDPWD` in step. Reef never calls `set_current_dir`; child programs get this directory explicitly |
+| `last_status` | `$?`. Written by `exec` after every pipeline (and when a line can't run at all), and by the prompt for Ctrl-C. Everything else only reads it |
+| `stop_requested` | set by `exit`, and by a syntax error when not interactive; the prompt and piped mode stop after the current command |
 | `interactive` | true at the prompt, where a syntax error doesn't stop Reef |
 | `vars` (private) | variables and whether each is exported. Only exported ones reach child programs. Names are case-insensitive on Windows |
 

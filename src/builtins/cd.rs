@@ -1,8 +1,8 @@
 //! `cd`: change the shell's directory.
 
-use crate::io::{Io, describe_error};
 use crate::platform;
 use crate::shell::Shell;
+use crate::streams::{Io, describe_error};
 
 /// `cd [dir | -]`
 ///
@@ -31,19 +31,17 @@ pub fn cd(sh: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
         _ => return fail(io, "too many arguments"),
     };
 
-    let new = match std::fs::canonicalize(platform::resolve(&sh.cwd, &target)) {
+    let new = match std::fs::canonicalize(platform::resolve(sh.cwd(), &target)) {
         Ok(p) if p.is_dir() => platform::clean_path(p),
         Ok(_) => return fail(io, &format!("{target}: Not a directory")),
         Err(e) => return fail(io, &format!("{target}: {}", describe_error(&e))),
     };
 
-    let old = std::mem::replace(&mut sh.cwd, new);
-    sh.set_var("OLDPWD", old.display().to_string(), true);
-    sh.set_var("PWD", sh.cwd.display().to_string(), true);
+    sh.set_cwd(new);
 
     // `cd -` prints where it went
     if argv.get(1).is_some_and(|a| a == "-") {
-        return super::print(io, "cd", &format!("{}\n", sh.cwd.display()));
+        return super::print(io, "cd", &format!("{}\n", sh.cwd().display()));
     }
     0
 }
