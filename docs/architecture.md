@@ -21,8 +21,11 @@ At startup `main.rs` also installs a Ctrl-C handler that does nothing, so Ctrl-C
 "echo 'a  b' c"
       │
       ▼
-lexer::lex()            src/lexer/mod.rs   text → Words, quoting remembered
+lexer::lex()            src/lexer/mod.rs   text → tokens (words + operators, with spans)
       │                                     unclosed quote → syntax error, status 2
+      ▼
+only_words()            src/main.rs        any operator → "not supported yet" (temporary,
+      │                                     until the parser)
       ▼
 Word::to_plain()        src/word.rs        Words → plain strings      (temporary)
       │
@@ -47,7 +50,8 @@ exit status (i32)  →  Shell::last_status  ($?)
 | `repl.rs` | the prompt loop (reedline) and piped-stdin mode | no |
 | `shell.rs` | `Shell`: state that survives between commands | no |
 | `word.rs` | `Word` and `WordPart`: one argument before expansion | no |
-| `lexer/mod.rs` | `lex()`: text into words, following POSIX quoting | no |
+| `lexer/mod.rs` | `lex()`: text into tokens, following POSIX quoting | no |
+| `lexer/token.rs` | `Token`, `TokenKind`, `Op`, `Span` | no |
 | `builtins/` | commands Reef runs itself, and the one table of them | no |
 | `io.rs` | `Io` and `Stream`: where a command's input and output go | no |
 | `platform/` | everything that differs between Windows and Linux | **yes, only here** |
@@ -90,4 +94,4 @@ External programs start with `Shell::cwd` as their directory, only the exported 
 
 ## Planned, in order
 
-Operators and spans in the lexer → the parser (`|`, `&&`, `;`, redirects) → expansion (`$VAR`, `~`, globs) → pipelines → control flow and functions → editor features (history file, completion, highlighting).
+The parser (`|`, `&&`, `;`, redirects) → expansion (`$VAR`, `~`, globs) → pipelines → control flow and functions → editor features (history file, completion, highlighting).
