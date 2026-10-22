@@ -86,7 +86,12 @@ pub fn lex(src: &str) -> Result<Vec<Word>, LexError> {
 
             // Unquoted backslash: the next character is literal
             '\\' => match chars.next() {
-                Some('\n') => {} // line continuation
+                // line continuation, but with nothing after it the next line is still to come
+                // ponytail: so `-c 'echo a \<newline>'` is an error where bash prints `a`; split the cases if it matters
+                Some('\n') if chars.peek().is_none() => {
+                    return Err(LexError::Incomplete("line continuation"));
+                }
+                Some('\n') => {}
                 Some(n) => cur.get_or_insert_with(Word::default).push_char(n, true),
                 // a lone trailing backslash stays literal, like `bash -c 'echo \'`
                 None => cur.get_or_insert_with(Word::default).push_char('\\', false),
@@ -175,6 +180,10 @@ mod tests {
     fn unclosed_quotes_are_incomplete() {
         assert_eq!(lex("echo 'a"), Err(LexError::Incomplete("unclosed '")));
         assert_eq!(lex("echo \"a"), Err(LexError::Incomplete("unclosed \"")));
+        assert_eq!(
+            lex("echo a \\\n"),
+            Err(LexError::Incomplete("line continuation"))
+        );
     }
 
     #[test]
