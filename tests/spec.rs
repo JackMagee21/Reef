@@ -101,6 +101,51 @@ fn piped_stdin_exits_with_last_status() {
 }
 
 #[test]
+fn dash_c_without_a_command_is_a_usage_error() {
+    Command::cargo_bin("reef")
+        .unwrap()
+        .arg("-c")
+        .assert()
+        .code(2);
+}
+
+#[test]
+fn piped_stdin_handles_crlf_and_a_missing_last_newline() {
+    Command::cargo_bin("reef")
+        .unwrap()
+        .write_stdin("echo a\r\necho b")
+        .assert()
+        .success()
+        .stdout("a\nb\n");
+}
+
+/// A program run by one line reads the lines after it, like in bash:
+/// the child Reef runs `exit 3`, then the parent Reef runs `echo parent`.
+#[test]
+fn programs_run_from_piped_stdin_can_read_the_next_lines() {
+    let reef = assert_cmd::cargo::cargo_bin("reef");
+    Command::cargo_bin("reef")
+        .unwrap()
+        .write_stdin(format!("'{}'\nexit 3\necho parent\n", reef.display()))
+        .assert()
+        .success()
+        .stdout("parent\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn non_utf8_environment_does_not_crash() {
+    use std::os::unix::ffi::OsStrExt;
+    Command::cargo_bin("reef")
+        .unwrap()
+        .env("REEF_BAD", std::ffi::OsStr::from_bytes(b"\xff"))
+        .args(["-c", "echo ok"])
+        .assert()
+        .success()
+        .stdout("ok\n");
+}
+
+#[test]
 fn exit_stops_reading_lines() {
     Command::cargo_bin("reef")
         .unwrap()
