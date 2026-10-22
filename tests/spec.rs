@@ -72,6 +72,127 @@ fn spec() {
     assert!(failed.is_empty(), "\n{}", failed.join("\n"));
 }
 
+// (input, expected stderr, expected exit code): the exact error messages.
+// CASES only checks stdout, so a missing or wrong message would pass there.
+const ERRORS: &[(&str, &str, i32)] = &[
+    ("echo ok", "", 0),
+    (
+        "nosuchcmd_reef_test",
+        "reef: nosuchcmd_reef_test: command not found\n",
+        127,
+    ),
+    (
+        "echo 'a",
+        "reef: syntax error: unexpected end of input: unclosed '\n",
+        2,
+    ),
+    (
+        "echo \"a",
+        "reef: syntax error: unexpected end of input: unclosed \"\n",
+        2,
+    ),
+    (
+        "cd nosuchdir_reef_test",
+        "reef: cd: nosuchdir_reef_test: No such file or directory\n",
+        1,
+    ),
+    ("cd a b", "reef: cd: too many arguments\n", 1),
+    (
+        "cd Cargo.toml",
+        "reef: cd: Cargo.toml: Not a directory\n",
+        1,
+    ),
+    (
+        "exit abc",
+        "reef: exit: abc: numeric argument required\n",
+        2,
+    ),
+    ("exit 1 2", "reef: exit: too many arguments\n", 1),
+];
+
+#[test]
+fn error_messages() {
+    let mut failed = vec![];
+    for (src, err, code) in ERRORS {
+        let o = Command::cargo_bin("reef")
+            .unwrap()
+            .args(["-c", src])
+            .output()
+            .unwrap();
+        let got_err = String::from_utf8_lossy(&o.stderr);
+        let got_code = o.status.code().unwrap_or(-1);
+        if (got_err.as_ref(), got_code) != (*err, *code) {
+            failed.push(format!(
+                "{src:?}\n  want {err:?} {code}\n  got  {got_err:?} {got_code}"
+            ));
+        }
+    }
+    assert!(failed.is_empty(), "\n{}", failed.join("\n"));
+}
+
+#[test]
+fn piped_quotes_can_span_lines() {
+    Command::cargo_bin("reef")
+        .unwrap()
+        .write_stdin("echo 'a\nb'\necho next\n")
+        .assert()
+        .success()
+        .stdout("a\nb\nnext\n");
+}
+
+#[test]
+fn piped_backslash_newline_joins_lines() {
+    Command::cargo_bin("reef")
+        .unwrap()
+        .write_stdin("echo a \\\nb\n")
+        .assert()
+        .success()
+        .stdout("a b\n");
+}
+
+/// POSIX: a syntax error stops a script, it doesn't skip to the next line.
+#[test]
+fn piped_syntax_error_stops_the_script() {
+    Command::cargo_bin("reef")
+        .unwrap()
+        .write_stdin("echo one\necho 'never closed\necho three\n")
+        .assert()
+        .code(2)
+        .stdout("one\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_file_that_cant_run_is_126_not_127() {
+    // Cargo.toml exists but has no execute bit
+    Command::cargo_bin("reef")
+        .unwrap()
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .args(["-c", "./Cargo.toml"])
+        .assert()
+        .code(126);
+}
+
+#[cfg(unix)]
+#[test]
+fn empty_path_entry_means_the_shells_dir() {
+    // An empty PATH entry means "the current directory", which must be the one
+    // Reef `cd`ed into, not the one it started in.
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("reef_path_test");
+    std::fs::create_dir_all(&dir).unwrap();
+    let script = dir.join("reef_hello");
+    std::fs::write(&script, "#!/bin/sh\necho hello\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    Command::cargo_bin("reef")
+        .unwrap()
+        .env("PATH", ":/usr/bin:/bin")
+        .write_stdin(format!("cd '{}'\nreef_hello\n", dir.display()))
+        .assert()
+        .success()
+        .stdout("hello\n");
+}
+
 #[test]
 fn unknown_argument_prints_usage_and_exits_2() {
     Command::cargo_bin("reef")
