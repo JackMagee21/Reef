@@ -15,6 +15,8 @@ pub struct Shell {
     /// Set by `exit`. Whatever is running commands stops after the current one;
     /// builtins never call `process::exit` themselves.
     pub exit_requested: bool,
+    /// True at the prompt. A syntax error stops a script or `-c`, but not the prompt.
+    pub interactive: bool,
     /// Private so every write goes through `set_var` and its rules.
     vars: HashMap<String, Var>,
 }
@@ -37,6 +39,7 @@ impl Shell {
             ),
             last_status: 0,
             exit_requested: false,
+            interactive: false,
             vars: HashMap::new(),
         };
         // vars_os, not vars: vars() panics on a single non-UTF-8 variable
