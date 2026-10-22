@@ -31,3 +31,11 @@ pub fn exit_status(status: ExitStatus) -> i32 {
 pub fn var_key(name: &str) -> String {
     name.to_string()
 }
+
+/// Where `cd` with no argument goes, first one set wins.
+pub const HOME_VARS: &[&str] = &["HOME"];
+
+/// Unix paths from `canonicalize` are already clean.
+pub fn clean_path(path: PathBuf) -> PathBuf {
+    path
+}

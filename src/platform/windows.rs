@@ -51,3 +51,16 @@ pub fn exit_status(status: ExitStatus) -> i32 {
 pub fn var_key(name: &str) -> String {
     name.to_ascii_uppercase()
 }
+
+/// Where `cd` with no argument goes, first one set wins. `HOME` is usually unset on Windows.
+pub const HOME_VARS: &[&str] = &["HOME", "USERPROFILE"];
+
+/// Drop the `\\?\` prefix `canonicalize` adds, so users see `C:\dir`, not `\\?\C:\dir`.
+// ponytail: plain string strip; paths over 260 chars may need the prefix kept, revisit if anyone hits it
+pub fn clean_path(path: PathBuf) -> PathBuf {
+    match path.to_str() {
+        Some(s) if s.starts_with(r"\\?\UNC\") => PathBuf::from(format!(r"\\{}", &s[8..])),
+        Some(s) if s.starts_with(r"\\?\") => PathBuf::from(&s[4..]),
+        _ => path,
+    }
+}
