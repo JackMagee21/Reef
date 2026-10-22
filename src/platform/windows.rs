@@ -37,8 +37,10 @@ pub fn find_command(name: &str, sh: &Shell) -> Option<PathBuf> {
     if name.contains(['/', '\\']) {
         return try_exts(resolve(&sh.cwd, name));
     }
+    // A relative PATH entry is relative to the shell's directory, not Reef's start directory
     std::env::split_paths(sh.var("PATH").unwrap_or_default())
-        .find_map(|dir| try_exts(dir.join(name)))
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .find_map(|dir| try_exts(sh.cwd.join(dir).join(name)))
 }
 
 /// Turn a child's exit code into a shell status (`$?`), always 0-255.

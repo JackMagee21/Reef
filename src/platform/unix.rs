@@ -8,18 +8,22 @@ use std::process::ExitStatus;
 use crate::shell::Shell;
 
 /// Find an executable file named `name` on `PATH`.
-/// A name containing `/` is resolved against `sh.cwd` instead of `PATH`.
+///
+/// A name containing `/` is resolved against `sh.cwd` and returned if it exists
+/// at all, so a file without the execute bit fails to start (126, "Permission
+/// denied") rather than being "not found" (127), like bash.
+/// Empty and relative `PATH` entries are relative to `sh.cwd`, not Reef's start directory.
 pub fn find_command(name: &str, sh: &Shell) -> Option<PathBuf> {
+    if name.contains('/') {
+        let path = sh.cwd.join(name);
+        return path.exists().then_some(path);
+    }
     let is_exec = |p: &PathBuf| {
         p.metadata()
             .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
     };
-
-    if name.contains('/') {
-        return Some(sh.cwd.join(name)).filter(is_exec);
-    }
     std::env::split_paths(sh.var("PATH").unwrap_or_default())
-        .map(|dir| dir.join(name))
+        .map(|dir| sh.cwd.join(dir).join(name))
         .find(is_exec)
 }
 
