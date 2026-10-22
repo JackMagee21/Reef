@@ -1,6 +1,6 @@
 //! `cd`: change the shell's directory.
 
-use crate::io::Io;
+use crate::io::{Io, describe_error};
 use crate::platform;
 use crate::shell::Shell;
 
@@ -34,10 +34,7 @@ pub fn cd(sh: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
     let new = match std::fs::canonicalize(platform::resolve(&sh.cwd, &target)) {
         Ok(p) if p.is_dir() => platform::clean_path(p),
         Ok(_) => return fail(io, &format!("{target}: Not a directory")),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return fail(io, &format!("{target}: No such file or directory"));
-        }
-        Err(e) => return fail(io, &format!("{target}: {e}")),
+        Err(e) => return fail(io, &format!("{target}: {}", describe_error(&e))),
     };
 
     let old = std::mem::replace(&mut sh.cwd, new);
