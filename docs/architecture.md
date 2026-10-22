@@ -27,10 +27,11 @@ lexer::lex()            src/lexer/mod.rs    text → tokens (words + operators, 
 parser::parse()         src/parser/mod.rs   tokens → tree (List, AndOr, Pipeline, Command)
       │                                      unfinished → more lines; wrong → syntax error, 2
       ▼
-exec::unsupported()     src/exec.rs         pipes, redirects, `&` → "not supported yet"
+exec::unsupported()     src/exec/mod.rs     pipes, `&`, heredocs → "not supported yet"
       │                                      (checked before anything runs)
       ▼
-exec::list()            src/exec.rs         walk the tree: `;` `&&` `||` `!` `{ }` `( )`
+exec::list()            src/exec/mod.rs     walk the tree: `;` `&&` `||` `!` `{ }` `( )`,
+      │                                      each command's redirects (exec/redirect.rs)
       │
       ▼  each simple command
 Word::to_plain()        src/word.rs         Words → plain strings      (until expansion)
@@ -52,7 +53,8 @@ exit status (i32)  →  Shell::last_status  ($?)
 | `main.rs` | startup, argument handling, `run()` (parse, check, run) | no |
 | `parser/mod.rs` | `parse()`: tokens into a tree, with incomplete and syntax errors | no |
 | `ast.rs` | the tree types: `List`, `Item`, `AndOr`, `Pipeline`, `Command`, `Redirect` | no |
-| `exec.rs` | running the tree, and starting builtins and programs | no |
+| `exec/mod.rs` | running the tree, and starting builtins and programs | no |
+| `exec/redirect.rs` | turning a command's redirects into the `Io` it runs with | no |
 | `repl.rs` | the prompt loop (reedline) and piped-stdin mode | no |
 | `shell.rs` | `Shell`: state that survives between commands | no |
 | `word.rs` | `Word` and `WordPart`: one argument before expansion | no |
@@ -100,4 +102,4 @@ External programs start with `Shell::cwd` as their directory, only the exported 
 
 ## Planned, in order
 
-Redirects (new `Io` streams) → pipelines → expansion (`$VAR`, `~`, globs) → control flow and functions → editor features (history file, completion, highlighting).
+Pipelines → expansion (`$VAR`, `~`, globs) → control flow and functions → editor features (history file, completion, highlighting).

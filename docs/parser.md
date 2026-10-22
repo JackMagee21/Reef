@@ -1,6 +1,6 @@
 # The parser and running commands
 
-`src/parser/mod.rs` turns the lexer's tokens into a tree of commands, defined in `src/ast.rs`. `src/exec.rs` walks that tree and runs it.
+`src/parser/mod.rs` turns the lexer's tokens into a tree of commands, defined in `src/ast.rs`. `src/exec/` walks that tree and runs it.
 
 ```
 echo a && echo b; (cd x)
@@ -52,7 +52,7 @@ Syntax errors point at the token: `unexpected `)` (column 8)`, or `(line 2, colu
 
 **At the prompt**, pressing Enter on an unfinished command starts a new line instead of running it, so you can type `{`, `echo a` and `}` on three lines. The prompt's line editor asks the parser whether the text is finished.
 
-## Running the tree (`exec.rs`)
+## Running the tree (`exec/`)
 
 | Construct | How it runs |
 |---|---|
@@ -75,14 +75,15 @@ These parse fully, but each needs new kinds of `Io` stream before it can run, so
 | Input | Message |
 |---|---|
 | `a \| b` | `pipelines (`\|`) are not supported yet` |
-| `echo hi > out`, `2>&1` | `redirects (`>out`) are not supported yet` |
 | `sleep 1 &` | `background jobs (`&`) are not supported yet` |
+
+Redirects run; [redirects.md](redirects.md) covers them, including the few forms (heredocs, `3>`, `>&-`) that are still an error.
 
 They're checked for the **whole input before anything runs**, so `echo first; echo a | b` prints nothing rather than running half the line.
 
 ## Not done yet (planned)
 
-- **Running pipes, redirects and `&`**: new `Stream` kinds in `io.rs` (see [io.md](io.md)).
+- **Running pipes and `&`**: new `Stream` kinds in `io.rs` (see [io.md](io.md)).
 - **Control flow**: `if`, `while`, `until`, `for`, `case`, and functions.
 - **Heredoc bodies**: `<<` parses, but the lines after it aren't read yet.
 - **Variable assignments**: `x=1 cmd`.
