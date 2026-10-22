@@ -33,6 +33,9 @@ fn interactive(sh: &mut Shell, io: &mut Io) -> i32 {
                 if let Err(e) = io.flush() {
                     eprintln!("reef: {e}");
                 }
+                if sh.exit_requested {
+                    return sh.last_status;
+                }
             }
             // Ctrl-C at the prompt cancels the line, like bash
             Ok(Signal::CtrlC) => sh.last_status = 130,
@@ -50,7 +53,12 @@ fn interactive(sh: &mut Shell, io: &mut Io) -> i32 {
 fn piped(sh: &mut Shell, io: &mut Io) -> i32 {
     for line in std::io::stdin().lock().lines() {
         match line {
-            Ok(line) => sh.last_status = crate::run(&line, sh, io),
+            Ok(line) => {
+                sh.last_status = crate::run(&line, sh, io);
+                if sh.exit_requested {
+                    break;
+                }
+            }
             Err(e) => {
                 eprintln!("reef: reading stdin: {e}");
                 return 1;
