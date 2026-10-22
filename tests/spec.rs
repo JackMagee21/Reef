@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::process::Output;
 
 use assert_cmd::Command;
@@ -11,6 +12,23 @@ fn reef() -> Command {
 /// Run `reef` with no arguments, feeding it `input` as piped stdin.
 fn piped(input: impl Into<Vec<u8>>) -> Assert {
     reef().write_stdin(input).assert()
+}
+
+/// A fresh, empty folder under `target/` for one test, so tests never write into the repo.
+fn temp_dir(name: &str) -> PathBuf {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// `reef -c src`, run inside `dir`.
+fn reef_in(dir: &Path, src: &str) -> Assert {
+    reef().current_dir(dir).args(["-c", src]).assert()
+}
+
+fn read(dir: &Path, file: &str) -> String {
+    std::fs::read_to_string(dir.join(file)).unwrap()
 }
 
 // (input, expected stdout, expected exit code)
@@ -101,6 +119,18 @@ const CASES: &[(&str, &str, i32)] = &[
     ("echo }", "}\n", 0),
     ("echo { if !", "{ if !\n", 0),
     ("echo '{'", "{\n", 0),
+    // Redirects that don't create files (the rest are tests below, in a temp folder)
+    ("echo hi > /dev/null", "", 0),
+    ("echo hi 1>&2", "", 0),
+    (
+        "nosuchcmd_reef_test 2>&1",
+        "reef: nosuchcmd_reef_test: command not found\n",
+        127,
+    ),
+    // b goes to the group's stderr, which is /dev/null
+    ("{ echo a; echo b 1>&2; } 2>/dev/null", "a\n", 0),
+    ("{ echo a; echo b; } >/dev/null; echo c", "c\n", 0),
+    ("echo hi < missing_reef_file || echo failed", "failed\n", 0),
 ];
 
 #[test]
@@ -168,15 +198,32 @@ const ERRORS: &[(&str, &str, i32)] = &[
         2,
     ),
     (
-        "echo hi 2>&1",
-        "reef: syntax error: redirects (`2>&1`) are not supported yet\n",
+        "cat <<EOF",
+        "reef: syntax error: heredocs (`<<EOF`) are not supported yet\n",
         2,
     ),
     (
-        "{ echo hi; } > out",
-        "reef: syntax error: redirects (`>out`) are not supported yet\n",
+        "echo hi 3>x",
+        "reef: syntax error: file descriptors above 2 (`3>x`) are not supported yet\n",
         2,
     ),
+    (
+        "echo hi >&-",
+        "reef: syntax error: closing file descriptors (`>&-`) is not supported yet\n",
+        2,
+    ),
+    // Redirect errors: the command doesn't run, status 1
+    (
+        "echo hi < missing_reef_file",
+        "reef: missing_reef_file: No such file or directory\n",
+        1,
+    ),
+    ("echo hi 2>&9", "reef: 9: Bad file descriptor\n", 1),
+    ("echo hi >&x", "reef: x: Bad file descriptor\n", 1),
+    // Redirects that don't create files (the rest are tests below, in a temp folder)
+    ("echo hi 1>&2", "hi\n", 0),
+    ("echo hi >&2", "hi\n", 0),
+    ("nosuchcmd_reef_test 2>/dev/null", "", 127),
     (
         "true &",
         "reef: syntax error: background jobs (`&`) are not supported yet\n",
@@ -439,4 +486,84 @@ fn cd_without_args_goes_home() {
 fn failed_cd_leaves_dir_unchanged() {
     let got = last_line_in_root("cd nosuchdir_reef_test\npwd\n", &[]);
     assert!(same_dir(&got, ROOT.as_ref()), "{got}");
+}
+
+// ---- redirects that create files: each test gets its own temp folder ----
+
+#[test]
+fn redirects_write_append_and_truncate_files() {
+    let dir = temp_dir("redirect_files");
+    for (src, file, want) in [
+        ("echo hi > out", "out", "hi\n"),
+        ("echo a > trunc; echo b > trunc", "trunc", "b\n"),
+        ("echo a > log; echo b >> log", "log", "a\nb\n"),
+        ("> first echo x", "first", "x\n"),
+        ("echo hi >| clobber", "clobber", "hi\n"),
+        ("echo hi 1> one", "one", "hi\n"),
+        // `<>` opens for reading and writing without truncating; `1` points stdout at it
+        ("echo hi 1<> rw", "rw", "hi\n"),
+        ("{ echo a; echo b; } > group", "group", "a\nb\n"),
+        ("(echo sub) > sub", "sub", "sub\n"),
+        ("echo a > x && echo b >> x", "x", "a\nb\n"),
+    ] {
+        reef_in(&dir, src).success().stdout("");
+        assert_eq!(read(&dir, file), want, "{src:?}");
+    }
+}
+
+#[test]
+fn redirect_order_matters() {
+    let dir = temp_dir("redirect_order");
+    let message = "reef: nosuchcmd_reef_test: command not found\n";
+    // `2> err`: only stderr goes to the file
+    reef_in(&dir, "nosuchcmd_reef_test 2> err")
+        .code(127)
+        .stdout("")
+        .stderr("");
+    assert_eq!(read(&dir, "err"), message);
+    // `> both 2>&1`: stdout moves to the file, then stderr copies it there too
+    reef_in(&dir, "nosuchcmd_reef_test > both 2>&1")
+        .code(127)
+        .stdout("")
+        .stderr("");
+    assert_eq!(read(&dir, "both"), message);
+    // `2>&1 > out`: stderr copies stdout while it's still the screen, then stdout moves
+    reef_in(&dir, "nosuchcmd_reef_test 2>&1 > out")
+        .code(127)
+        .stdout(message)
+        .stderr("");
+    assert_eq!(read(&dir, "out"), "");
+}
+
+#[test]
+fn redirect_paths_are_relative_to_the_shells_directory() {
+    let dir = temp_dir("redirect_cd");
+    std::fs::create_dir(dir.join("sub")).unwrap();
+    reef_in(&dir, "cd sub && echo hi > f").success();
+    assert_eq!(read(&dir, "sub/f"), "hi\n");
+}
+
+#[test]
+fn programs_get_redirected_files_as_stdin_and_stdout() {
+    let dir = temp_dir("redirect_programs");
+    std::fs::write(dir.join("script"), "echo from-script\n").unwrap();
+    let child = assert_cmd::cargo::cargo_bin("reef");
+    // the child Reef reads its commands from the file and writes to another file
+    reef_in(&dir, &format!("'{}' < script > out", child.display()))
+        .success()
+        .stdout("");
+    assert_eq!(read(&dir, "out"), "from-script\n");
+}
+
+#[test]
+fn a_failed_redirect_skips_the_command_but_not_the_script() {
+    let dir = temp_dir("redirect_fail");
+    reef()
+        .current_dir(&dir)
+        .write_stdin("echo a > /nonexistent_reef_dir/x\necho b\n")
+        .assert()
+        .success()
+        .stdout("b\n");
+    // a directory can't be written as a file (the message differs by OS)
+    reef_in(&dir, "echo hi > .").code(1).stdout("");
 }
