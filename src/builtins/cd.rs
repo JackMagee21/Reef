@@ -31,7 +31,7 @@ pub fn cd(sh: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
         _ => return fail(io, "too many arguments"),
     };
 
-    let new = match std::fs::canonicalize(sh.cwd.join(&target)) {
+    let new = match std::fs::canonicalize(platform::resolve(&sh.cwd, &target)) {
         Ok(p) if p.is_dir() => platform::clean_path(p),
         Ok(_) => return fail(io, &format!("{target}: Not a directory")),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
