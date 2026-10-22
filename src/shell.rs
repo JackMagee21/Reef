@@ -39,9 +39,16 @@ impl Shell {
             exit_requested: false,
             vars: HashMap::new(),
         };
-        for (k, v) in std::env::vars() {
-            sh.set_var(&k, v, true);
+        // vars_os, not vars: vars() panics on a single non-UTF-8 variable
+        // ponytail: non-UTF-8 variables are dropped, so children don't get them; store OsString if that matters
+        for (k, v) in std::env::vars_os() {
+            if let (Ok(k), Ok(v)) = (k.into_string(), v.into_string()) {
+                sh.set_var(&k, v, true);
+            }
         }
+        // The inherited PWD may be missing (cmd.exe) or stale (another shell's)
+        let pwd = sh.cwd.display().to_string();
+        sh.set_var("PWD", pwd, true);
         sh
     }
 
