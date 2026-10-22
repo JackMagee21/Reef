@@ -53,6 +53,41 @@ const CASES: &[(&str, &str, i32)] = &[
     ("cd nosuchdir_reef_test", "", 1),
     ("cd a b", "", 1),
     ("cd Cargo.toml", "", 1),
+    // Lists: `;` and newlines run commands in order
+    ("echo a; echo b", "a\nb\n", 0),
+    ("echo a;echo b", "a\nb\n", 0),
+    ("echo a\necho b", "a\nb\n", 0),
+    ("echo a;", "a\n", 0),
+    ("false; true", "", 0),
+    ("true; false", "", 1),
+    // && and ||: the right side runs only if the left succeeded / failed
+    ("true && echo yes", "yes\n", 0),
+    ("false && echo no", "", 1),
+    ("false || echo yes", "yes\n", 0),
+    ("true || echo no", "", 0),
+    ("true && false || echo c", "c\n", 0),
+    ("false || false && echo no", "", 1),
+    ("echo a &&\necho b", "a\nb\n", 0),
+    // ! flips the status
+    ("! true", "", 1),
+    ("! false", "", 0),
+    ("! false && echo yes", "yes\n", 0),
+    // { } runs in this shell, ( ) in a copy
+    ("{ echo a; echo b; }", "a\nb\n", 0),
+    ("{ echo a; } && echo b", "a\nb\n", 0),
+    ("{ false; }", "", 1),
+    ("(echo sub)", "sub\n", 0),
+    ("(exit 3)", "", 3),
+    ("(exit 3); echo after", "after\n", 0),
+    ("(exit 3) || echo failed", "failed\n", 0),
+    // exit stops the rest of the line, and uses $? from the command before it
+    ("exit 4; echo no", "", 4),
+    ("false; exit", "", 1),
+    ("true && exit 5 || echo no", "", 5),
+    // Reserved words are only special at the start of a command
+    ("echo }", "}\n", 0),
+    ("echo { if !", "{ if !\n", 0),
+    ("echo '{'", "{\n", 0),
 ];
 
 #[test]
@@ -111,25 +146,85 @@ const ERRORS: &[(&str, &str, i32)] = &[
         2,
     ),
     ("exit 1 2", "reef: exit: too many arguments\n", 1),
-    // Operators are lexed, but running them waits for the parser (change these then)
+    // Parsed, but running them needs new Io streams (change these when they land)
     (
-        "echo a; echo b",
-        "reef: syntax error: `;` (column 7) is not supported yet\n",
+        "echo é | x",
+        "reef: syntax error: pipelines (`|`) are not supported yet\n",
         2,
     ),
     (
         "echo hi 2>&1",
-        "reef: syntax error: `>&` (column 10) is not supported yet\n",
+        "reef: syntax error: redirects (`2>&1`) are not supported yet\n",
         2,
     ),
     (
-        "echo é | x",
-        "reef: syntax error: `|` (column 8) is not supported yet\n",
+        "{ echo hi; } > out",
+        "reef: syntax error: redirects (`>out`) are not supported yet\n",
         2,
     ),
     (
-        "echo a\necho b",
-        "reef: syntax error: `\\n` (column 7) is not supported yet\n",
+        "true &",
+        "reef: syntax error: background jobs (`&`) are not supported yet\n",
+        2,
+    ),
+    (
+        "if true; then echo; fi",
+        "reef: syntax error: `if` is not supported yet (column 1)\n",
+        2,
+    ),
+    // Syntax errors point at the column
+    (
+        "echo a;;",
+        "reef: syntax error: unexpected `;;` (column 7)\n",
+        2,
+    ),
+    (
+        "; echo a",
+        "reef: syntax error: unexpected `;` (column 1)\n",
+        2,
+    ),
+    (
+        "echo é )",
+        "reef: syntax error: unexpected `)` (column 8)\n",
+        2,
+    ),
+    ("}", "reef: syntax error: unexpected `}` (column 1)\n", 2),
+    ("( )", "reef: syntax error: unexpected `)` (column 3)\n", 2),
+    (
+        "echo >",
+        "reef: syntax error: `>` needs a file name after it (column 6)\n",
+        2,
+    ),
+    (
+        "echo > ; x",
+        "reef: syntax error: `>` needs a file name after it (column 6)\n",
+        2,
+    ),
+    // Unfinished input: an error with -c, more lines in piped mode and at the prompt
+    (
+        "echo a &&",
+        "reef: syntax error: unexpected end of input: `&&` needs a command after it\n",
+        2,
+    ),
+    (
+        "echo a |",
+        "reef: syntax error: unexpected end of input: `|` needs a command after it\n",
+        2,
+    ),
+    (
+        "{ echo a;",
+        "reef: syntax error: unexpected end of input: `{` is missing its `}`\n",
+        2,
+    ),
+    (
+        "(echo a",
+        "reef: syntax error: unexpected end of input: `(` is missing its `)`\n",
+        2,
+    ),
+    // An error stops the whole -c line before anything runs
+    (
+        "echo first; echo a | b",
+        "reef: syntax error: pipelines (`|`) are not supported yet\n",
         2,
     ),
 ];
@@ -162,6 +257,25 @@ fn piped_quotes_can_span_lines() {
         .assert()
         .success()
         .stdout("a\nb\nnext\n");
+}
+
+#[test]
+fn piped_commands_can_continue_after_an_operator() {
+    Command::cargo_bin("reef")
+        .unwrap()
+        .write_stdin("echo a &&\necho b\n{\necho c\n}\n")
+        .assert()
+        .success()
+        .stdout("a\nb\nc\n");
+}
+
+#[test]
+fn piped_blank_lines_keep_the_last_status() {
+    Command::cargo_bin("reef")
+        .unwrap()
+        .write_stdin("false\n\n# just a comment\n")
+        .assert()
+        .code(1);
 }
 
 #[test]
