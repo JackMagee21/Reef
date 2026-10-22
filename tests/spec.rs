@@ -1,4 +1,17 @@
+use std::process::Output;
+
 use assert_cmd::Command;
+use assert_cmd::assert::Assert;
+
+/// A fresh `reef` command to configure and run.
+fn reef() -> Command {
+    Command::cargo_bin("reef").unwrap()
+}
+
+/// Run `reef` with no arguments, feeding it `input` as piped stdin.
+fn piped(input: impl Into<Vec<u8>>) -> Assert {
+    reef().write_stdin(input).assert()
+}
 
 // (input, expected stdout, expected exit code)
 // Add every new feature's cases here BEFORE implementing it, and never delete a passing case.
@@ -92,18 +105,20 @@ const CASES: &[(&str, &str, i32)] = &[
 
 #[test]
 fn spec() {
+    check_table(CASES, |o| &o.stdout);
+}
+
+/// Run every row as `reef -c input` and compare one output stream and the exit code.
+/// Collects all failures before failing, so one run shows everything that's wrong.
+fn check_table(rows: &[(&str, &str, i32)], stream: fn(&Output) -> &[u8]) {
     let mut failed = vec![];
-    for (src, out, code) in CASES {
-        let o = Command::cargo_bin("reef")
-            .unwrap()
-            .args(["-c", src])
-            .output()
-            .unwrap();
-        let got_out = String::from_utf8_lossy(&o.stdout);
+    for (src, want, code) in rows {
+        let o = reef().args(["-c", src]).output().unwrap();
+        let got = String::from_utf8_lossy(stream(&o));
         let got_code = o.status.code().unwrap_or(-1);
-        if (got_out.as_ref(), got_code) != (*out, *code) {
+        if (got.as_ref(), got_code) != (*want, *code) {
             failed.push(format!(
-                "{src:?}\n  want {out:?} {code}\n  got  {got_out:?} {got_code}"
+                "{src:?}\n  want {want:?} {code}\n  got  {got:?} {got_code}"
             ));
         }
     }
@@ -231,70 +246,37 @@ const ERRORS: &[(&str, &str, i32)] = &[
 
 #[test]
 fn error_messages() {
-    let mut failed = vec![];
-    for (src, err, code) in ERRORS {
-        let o = Command::cargo_bin("reef")
-            .unwrap()
-            .args(["-c", src])
-            .output()
-            .unwrap();
-        let got_err = String::from_utf8_lossy(&o.stderr);
-        let got_code = o.status.code().unwrap_or(-1);
-        if (got_err.as_ref(), got_code) != (*err, *code) {
-            failed.push(format!(
-                "{src:?}\n  want {err:?} {code}\n  got  {got_err:?} {got_code}"
-            ));
-        }
-    }
-    assert!(failed.is_empty(), "\n{}", failed.join("\n"));
+    check_table(ERRORS, |o| &o.stderr);
 }
 
 #[test]
 fn piped_quotes_can_span_lines() {
-    Command::cargo_bin("reef")
-        .unwrap()
-        .write_stdin("echo 'a\nb'\necho next\n")
-        .assert()
+    piped("echo 'a\nb'\necho next\n")
         .success()
         .stdout("a\nb\nnext\n");
 }
 
 #[test]
 fn piped_commands_can_continue_after_an_operator() {
-    Command::cargo_bin("reef")
-        .unwrap()
-        .write_stdin("echo a &&\necho b\n{\necho c\n}\n")
-        .assert()
+    piped("echo a &&\necho b\n{\necho c\n}\n")
         .success()
         .stdout("a\nb\nc\n");
 }
 
 #[test]
 fn piped_blank_lines_keep_the_last_status() {
-    Command::cargo_bin("reef")
-        .unwrap()
-        .write_stdin("false\n\n# just a comment\n")
-        .assert()
-        .code(1);
+    piped("false\n\n# just a comment\n").code(1);
 }
 
 #[test]
 fn piped_backslash_newline_joins_lines() {
-    Command::cargo_bin("reef")
-        .unwrap()
-        .write_stdin("echo a \\\nb\n")
-        .assert()
-        .success()
-        .stdout("a b\n");
+    piped("echo a \\\nb\n").success().stdout("a b\n");
 }
 
 /// POSIX: a syntax error stops a script, it doesn't skip to the next line.
 #[test]
 fn piped_syntax_error_stops_the_script() {
-    Command::cargo_bin("reef")
-        .unwrap()
-        .write_stdin("echo one\necho 'never closed\necho three\n")
-        .assert()
+    piped("echo one\necho 'never closed\necho three\n")
         .code(2)
         .stdout("one\n");
 }
@@ -303,8 +285,7 @@ fn piped_syntax_error_stops_the_script() {
 #[test]
 fn a_file_that_cant_run_is_126_not_127() {
     // Cargo.toml exists but has no execute bit
-    Command::cargo_bin("reef")
-        .unwrap()
+    reef()
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .args(["-c", "./Cargo.toml"])
         .assert()
@@ -322,8 +303,7 @@ fn empty_path_entry_means_the_shells_dir() {
     std::fs::write(&script, "#!/bin/sh\necho hello\n").unwrap();
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-    Command::cargo_bin("reef")
-        .unwrap()
+    reef()
         .env("PATH", ":/usr/bin:/bin")
         .write_stdin(format!("cd '{}'\nreef_hello\n", dir.display()))
         .assert()
@@ -333,60 +313,37 @@ fn empty_path_entry_means_the_shells_dir() {
 
 #[test]
 fn unknown_argument_prints_usage_and_exits_2() {
-    Command::cargo_bin("reef")
-        .unwrap()
-        .arg("--nope")
-        .assert()
-        .code(2);
+    reef().arg("--nope").assert().code(2);
 }
 
 #[test]
 fn no_args_runs_each_line_of_piped_stdin() {
-    Command::cargo_bin("reef")
-        .unwrap()
-        .write_stdin("echo one\necho -n two\n")
-        .assert()
+    piped("echo one\necho -n two\n")
         .success()
         .stdout("one\ntwo");
 }
 
 #[test]
 fn piped_stdin_exits_with_last_status() {
-    Command::cargo_bin("reef")
-        .unwrap()
-        .write_stdin("echo hi\nnosuchcmd_reef_test\n")
-        .assert()
-        .code(127);
+    piped("echo hi\nnosuchcmd_reef_test\n").code(127);
 }
 
 #[test]
 fn dash_c_without_a_command_is_a_usage_error() {
-    Command::cargo_bin("reef")
-        .unwrap()
-        .arg("-c")
-        .assert()
-        .code(2);
+    reef().arg("-c").assert().code(2);
 }
 
 #[test]
 fn piped_stdin_handles_crlf_and_a_missing_last_newline() {
-    Command::cargo_bin("reef")
-        .unwrap()
-        .write_stdin("echo a\r\necho b")
-        .assert()
-        .success()
-        .stdout("a\nb\n");
+    piped("echo a\r\necho b").success().stdout("a\nb\n");
 }
 
 /// A program run by one line reads the lines after it, like in bash:
 /// the child Reef runs `exit 3`, then the parent Reef runs `echo parent`.
 #[test]
 fn programs_run_from_piped_stdin_can_read_the_next_lines() {
-    let reef = assert_cmd::cargo::cargo_bin("reef");
-    Command::cargo_bin("reef")
-        .unwrap()
-        .write_stdin(format!("'{}'\nexit 3\necho parent\n", reef.display()))
-        .assert()
+    let child = assert_cmd::cargo::cargo_bin("reef");
+    piped(format!("'{}'\nexit 3\necho parent\n", child.display()))
         .success()
         .stdout("parent\n");
 }
@@ -395,8 +352,7 @@ fn programs_run_from_piped_stdin_can_read_the_next_lines() {
 #[test]
 fn non_utf8_environment_does_not_crash() {
     use std::os::unix::ffi::OsStrExt;
-    Command::cargo_bin("reef")
-        .unwrap()
+    reef()
         .env("REEF_BAD", std::ffi::OsStr::from_bytes(b"\xff"))
         .args(["-c", "echo ok"])
         .assert()
@@ -406,30 +362,17 @@ fn non_utf8_environment_does_not_crash() {
 
 #[test]
 fn exit_stops_reading_lines() {
-    Command::cargo_bin("reef")
-        .unwrap()
-        .write_stdin("exit 3\necho after\n")
-        .assert()
-        .code(3)
-        .stdout("");
+    piped("exit 3\necho after\n").code(3).stdout("");
 }
 
 #[test]
 fn exit_without_args_uses_last_status() {
-    Command::cargo_bin("reef")
-        .unwrap()
-        .write_stdin("false\nexit\necho after\n")
-        .assert()
-        .code(1)
-        .stdout("");
+    piped("false\nexit\necho after\n").code(1).stdout("");
 }
 
 #[test]
 fn exit_with_too_many_args_keeps_going() {
-    Command::cargo_bin("reef")
-        .unwrap()
-        .write_stdin("exit 1 2\necho still here\n")
-        .assert()
+    piped("exit 1 2\necho still here\n")
         .success()
         .stdout("still here\n");
 }
@@ -440,8 +383,7 @@ const ROOT: &str = env!("CARGO_MANIFEST_DIR");
 
 /// Run `lines` through piped stdin from the repo root; returns the last line printed.
 fn last_line_in_root(lines: &str, envs: &[(&str, &str)]) -> String {
-    let o = Command::cargo_bin("reef")
-        .unwrap()
+    let o = reef()
         .current_dir(ROOT)
         .envs(envs.iter().copied())
         .write_stdin(lines)
