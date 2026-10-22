@@ -11,6 +11,14 @@ use crate::parser::{self, ParseError};
 use crate::platform;
 use crate::shell::Shell;
 
+/// Run one complete command and record its status in `$?`. Returns true when
+/// `exit` (or a script's syntax error) asked Reef to stop. The prompt and piped
+/// mode both go through here, so they can't drift apart.
+fn execute(src: &str, sh: &mut Shell, io: &mut Io) -> bool {
+    sh.last_status = crate::run(src, sh, io);
+    sh.exit_requested
+}
+
 /// True when `src` stops in the middle of a command (`echo a &&`, `{ echo`, an
 /// open quote), so the next line belongs to the same command.
 // ponytail: parses twice (here and in run); fine while inputs are lines a person typed
@@ -71,12 +79,12 @@ fn interactive(sh: &mut Shell, io: &mut Io) -> i32 {
 fn on_signal(signal: Signal, sh: &mut Shell, io: &mut Io) -> Option<i32> {
     match signal {
         Signal::Success(line) => {
-            sh.last_status = crate::run(&line, sh, io);
+            let stop = execute(&line, sh, io);
             // `echo -n hi` must show before the next prompt is drawn
             if let Err(e) = io.flush() {
                 eprintln!("reef: {e}");
             }
-            sh.exit_requested.then_some(sh.last_status)
+            stop.then_some(sh.last_status)
         }
         // Ctrl-C at the prompt cancels the line, like bash
         Signal::CtrlC => {
@@ -118,8 +126,7 @@ fn piped(sh: &mut Shell, io: &mut Io) -> i32 {
                 return 1;
             }
         }
-        sh.last_status = crate::run(&std::mem::take(&mut cmd), sh, io);
-        if sh.exit_requested {
+        if execute(&std::mem::take(&mut cmd), sh, io) {
             break;
         }
     }
