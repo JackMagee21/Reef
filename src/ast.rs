@@ -10,6 +10,8 @@
 //!
 //! Later steps add `If`, `While`, `For`, `Case` and functions as new `Command` variants.
 
+use std::fmt;
+
 use crate::lexer::Op;
 use crate::word::Word;
 
@@ -26,6 +28,13 @@ pub struct Item {
 pub struct AndOr {
     pub first: Pipeline,
     pub rest: Vec<(Connector, Pipeline)>,
+}
+
+impl AndOr {
+    /// Every pipeline in the chain, in order, ignoring the `&&` / `||` between them.
+    pub fn pipelines(&self) -> impl Iterator<Item = &Pipeline> {
+        std::iter::once(&self.first).chain(self.rest.iter().map(|(_, p)| p))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -62,6 +71,25 @@ pub enum Command {
     },
 }
 
+impl Command {
+    /// The redirects of any kind of command.
+    pub fn redirects(&self) -> &[Redirect] {
+        match self {
+            Command::Simple { redirects, .. }
+            | Command::Subshell { redirects, .. }
+            | Command::Group { redirects, .. } => redirects,
+        }
+    }
+
+    /// The commands inside `( )` or `{ }`; `None` for a simple command.
+    pub fn body(&self) -> Option<&List> {
+        match self {
+            Command::Simple { .. } => None,
+            Command::Subshell { body, .. } | Command::Group { body, .. } => Some(body),
+        }
+    }
+}
+
 /// `2>&1`, `> out`, `<< EOF`
 pub struct Redirect {
     /// The `2` in `2>file`; `None` means the operator's default (0 for `<`, 1 for `>`).
@@ -69,4 +97,14 @@ pub struct Redirect {
     pub op: Op,
     /// The file, the fd to copy (`&1`), or the heredoc's end marker.
     pub target: Word,
+}
+
+/// Written back compactly, for messages: `2>&1`, `>out`.
+impl fmt::Display for Redirect {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(fd) = self.fd {
+            write!(f, "{fd}")?;
+        }
+        write!(f, "{}{}", self.op.as_str(), self.target.to_plain())
+    }
 }

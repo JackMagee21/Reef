@@ -34,6 +34,20 @@ impl Word {
         self.push_str(c.encode_utf8(&mut [0; 4]), quoted);
     }
 
+    /// The text, if the word is one unquoted piece: `if` and `2` yes, `'if'`, `"2"` and `a'b'` no.
+    /// For words that are only special when written plainly: reserved words, `2` in `2>x`.
+    pub fn as_unquoted(&self) -> Option<&str> {
+        match self.parts.as_slice() {
+            [
+                WordPart::Literal {
+                    text,
+                    quoted: false,
+                },
+            ] => Some(text),
+            _ => None,
+        }
+    }
+
     // shortcut: joins the parts as-is; the expander replaces this once $x and globs exist
     pub fn to_plain(&self) -> String {
         self.parts

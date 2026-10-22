@@ -11,7 +11,7 @@ use std::str::CharIndices;
 
 pub use token::{Op, Span, Token, TokenKind};
 
-use crate::word::{Word, WordPart};
+use crate::word::Word;
 
 #[derive(Debug, PartialEq)]
 pub enum LexError {
@@ -178,20 +178,16 @@ fn read_op(c: char, chars: &mut Peekable<CharIndices>) -> Op {
 
 /// `2` in `2>file`: one unquoted part, all ASCII digits. `'2'>file` and `a2>file` are words.
 fn io_number(w: &Word) -> Option<u32> {
-    match w.parts.as_slice() {
-        [
-            WordPart::Literal {
-                text,
-                quoted: false,
-            },
-        ] if !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()) => text.parse().ok(),
-        _ => None,
-    }
+    w.as_unquoted()
+        .filter(|t| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit()))?
+        .parse()
+        .ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::word::WordPart;
 
     /// Just the words, as plain text. Newlines are skipped; any other operator fails the test.
     fn plain(src: &str) -> Vec<String> {

@@ -14,7 +14,6 @@
 
 use crate::ast::{AndOr, Command, Connector, Item, List, Pipeline, Redirect};
 use crate::lexer::{self, LexError, Op, Span, Token, TokenKind};
-use crate::word::WordPart;
 
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
@@ -259,15 +258,7 @@ impl Parser<'_> {
     /// `{` and `!` only count when written exactly like that: `'{'` is just text.
     fn peek_plain_word(&self) -> Option<&str> {
         match &self.peek()?.kind {
-            TokenKind::Word(w) => match w.parts.as_slice() {
-                [
-                    WordPart::Literal {
-                        text,
-                        quoted: false,
-                    },
-                ] => Some(text),
-                _ => None,
-            },
+            TokenKind::Word(w) => w.as_unquoted(),
             _ => None,
         }
     }
@@ -367,28 +358,19 @@ mod tests {
     }
 
     fn command(c: &Command) -> String {
-        let after = |redirects: &[Redirect]| -> String {
-            redirects
-                .iter()
-                .map(|r| format!(" {}", redirect(r)))
-                .collect()
-        };
+        let after: String = c.redirects().iter().map(|r| format!(" {r}")).collect();
         match c {
-            Command::Simple { words, redirects } => {
-                let mut parts: Vec<String> = words.iter().map(Word::to_plain).collect();
-                parts.extend(redirects.iter().map(redirect));
+            Command::Simple { words, .. } => {
+                let parts: Vec<String> = words
+                    .iter()
+                    .map(Word::to_plain)
+                    .chain(c.redirects().iter().map(Redirect::to_string))
+                    .collect();
                 format!("[{}]", parts.join(" "))
             }
-            Command::Subshell { body, redirects } => {
-                format!("({}){}", list(body), after(redirects))
-            }
-            Command::Group { body, redirects } => format!("{{{}}}{}", list(body), after(redirects)),
+            Command::Subshell { body, .. } => format!("({}){after}", list(body)),
+            Command::Group { body, .. } => format!("{{{}}}{after}", list(body)),
         }
-    }
-
-    fn redirect(r: &Redirect) -> String {
-        let fd = r.fd.map(|n| n.to_string()).unwrap_or_default();
-        format!("{fd}{}{}", r.op.as_str(), r.target.to_plain())
     }
 
     #[test]

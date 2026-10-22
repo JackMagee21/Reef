@@ -15,9 +15,7 @@ pub fn unsupported(list: &List) -> Option<String> {
         if item.background {
             return Some("background jobs (`&`) are not supported yet".into());
         }
-        let pipelines =
-            std::iter::once(&item.and_or.first).chain(item.and_or.rest.iter().map(|(_, p)| p));
-        pipelines.into_iter().find_map(|p| {
+        item.and_or.pipelines().find_map(|p| {
             if p.commands.len() > 1 {
                 return Some("pipelines (`|`) are not supported yet".into());
             }
@@ -27,18 +25,10 @@ pub fn unsupported(list: &List) -> Option<String> {
 }
 
 fn unsupported_command(c: &Command) -> Option<String> {
-    let (redirects, body) = match c {
-        Command::Simple { redirects, .. } => (redirects, None),
-        Command::Subshell { body, redirects } | Command::Group { body, redirects } => {
-            (redirects, Some(body))
-        }
-    };
-    if let Some(r) = redirects.first() {
-        let fd = r.fd.map(|n| n.to_string()).unwrap_or_default();
-        let text = format!("{fd}{}{}", r.op.as_str(), r.target.to_plain());
-        return Some(format!("redirects (`{text}`) are not supported yet"));
+    if let Some(r) = c.redirects().first() {
+        return Some(format!("redirects (`{r}`) are not supported yet"));
     }
-    body.and_then(unsupported)
+    c.body().and_then(unsupported)
 }
 
 /// Run each item in order and return the last status. An empty list (a blank
@@ -108,21 +98,20 @@ fn simple(argv: &[String], sh: &mut Shell, io: &mut Io) -> i32 {
     }
 
     let Some(path) = platform::find_command(name, sh) else {
-        // If stderr itself is broken there's nowhere left to report it
-        let _ = io.write_err(format!("reef: {name}: command not found\n").as_bytes());
+        io.error(format_args!("{name}: command not found"));
         return 127;
     };
 
     // Anything a builtin wrote must reach the console before the child writes after it
     if let Err(e) = io.flush() {
-        let _ = io.write_err(format!("reef: {e}\n").as_bytes());
+        io.error(e);
         return 1;
     }
 
     let (stdin, stdout, stderr) = match io.for_child() {
         Ok(handles) => handles,
         Err(e) => {
-            let _ = io.write_err(format!("reef: {name}: {e}\n").as_bytes());
+            io.error(format_args!("{name}: {e}"));
             return 126;
         }
     };
@@ -141,7 +130,7 @@ fn simple(argv: &[String], sh: &mut Shell, io: &mut Io) -> i32 {
         Ok(s) => platform::exit_status(s),
         // Found but couldn't start: no permission, a directory, a bad `#!` line
         Err(e) => {
-            let _ = io.write_err(format!("reef: {name}: {e}\n").as_bytes());
+            io.error(format_args!("{name}: {e}"));
             if e.kind() == std::io::ErrorKind::NotFound {
                 127
             } else {
