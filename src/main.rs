@@ -52,6 +52,10 @@ fn run(src: &str, sh: &mut Shell, io: &mut Io) -> i32 {
         Ok(words) => words,
         Err(e) => {
             let _ = io.write_err(format!("reef: syntax error: {e}\n").as_bytes());
+            // POSIX: a script stops at a syntax error instead of running the lines after it
+            if !sh.interactive {
+                sh.exit_requested = true;
+            }
             return 2;
         }
     };
@@ -97,9 +101,14 @@ fn run(src: &str, sh: &mut Shell, io: &mut Io) -> i32 {
 
     match status {
         Ok(s) => platform::exit_status(s),
+        // Found but couldn't start: no permission, a directory, a bad `#!` line
         Err(e) => {
             let _ = io.write_err(format!("reef: {name}: {e}\n").as_bytes());
-            126
+            if e.kind() == std::io::ErrorKind::NotFound {
+                127
+            } else {
+                126
+            }
         }
     }
 }
