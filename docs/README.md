@@ -5,7 +5,8 @@ Start with [architecture.md](architecture.md). It shows how a line of input trav
 | Doc | Read it when you want to... |
 |---|---|
 | [architecture.md](architecture.md) | understand how the pieces fit together |
-| [lexer.md](lexer.md) | know exactly how Reef splits a line into words and handles quotes |
+| [lexer.md](lexer.md) | know exactly how Reef splits a line into words and operators, and handles quotes |
+| [parser.md](parser.md) | know the grammar, the error messages, and how `;`, `&&`, `\|\|`, `{ }` and `( )` run |
 | [builtins.md](builtins.md) | add a new builtin command |
 | [io.md](io.md) | understand why builtins never print directly, and how redirects will plug in |
 | [platform.md](platform.md) | add or change anything that differs between Windows and Linux |

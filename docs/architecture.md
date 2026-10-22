@@ -18,35 +18,41 @@ At startup `main.rs` also installs a Ctrl-C handler that does nothing, so Ctrl-C
 ## How one line runs
 
 ```
-"echo 'a  b' c"
+"cd src && echo 'a  b'"
       │
       ▼
-lexer::lex()            src/lexer/mod.rs   text → tokens (words + operators, with spans)
-      │                                     unclosed quote → syntax error, status 2
-      ▼
-only_words()            src/main.rs        any operator → "not supported yet" (temporary,
-      │                                     until the parser)
-      ▼
-Word::to_plain()        src/word.rs        Words → plain strings      (temporary)
+lexer::lex()            src/lexer/mod.rs    text → tokens (words + operators, with spans)
       │
       ▼
-run()                   src/main.rs        ["echo", "a  b", "c"]
+parser::parse()         src/parser/mod.rs   tokens → tree (List, AndOr, Pipeline, Command)
+      │                                      unfinished → more lines; wrong → syntax error, 2
+      ▼
+exec::unsupported()     src/exec.rs         pipes, redirects, `&` → "not supported yet"
+      │                                      (checked before anything runs)
+      ▼
+exec::list()            src/exec.rs         walk the tree: `;` `&&` `||` `!` `{ }` `( )`
       │
-      ├── builtin?      src/builtins/      call it with (Shell, args, Io)
+      ▼  each simple command
+Word::to_plain()        src/word.rs         Words → plain strings      (until expansion)
       │
-      └── otherwise     src/platform/      find it on PATH, start it as a process
+      ├── builtin?      src/builtins/       call it with (Shell, args, Io)
+      │
+      └── otherwise     src/platform/       find it on PATH, start it as a process
       │
       ▼
 exit status (i32)  →  Shell::last_status  ($?)
 ```
 
-`run()` in `main.rs` is a placeholder: it treats one line as one simple command. The parser (**planned**) will replace it with a tree of commands joined by `|`, `&&`, `;` and so on.
+`run()` in `main.rs` ties it together: parse, check, run. See [parser.md](parser.md) for the grammar and how each construct runs.
 
 ## The pieces
 
 | File | Owns | Depends on the OS? |
 |---|---|---|
-| `main.rs` | startup, argument handling, `run()` | no |
+| `main.rs` | startup, argument handling, `run()` (parse, check, run) | no |
+| `parser/mod.rs` | `parse()`: tokens into a tree, with incomplete and syntax errors | no |
+| `ast.rs` | the tree types: `List`, `Item`, `AndOr`, `Pipeline`, `Command`, `Redirect` | no |
+| `exec.rs` | running the tree, and starting builtins and programs | no |
 | `repl.rs` | the prompt loop (reedline) and piped-stdin mode | no |
 | `shell.rs` | `Shell`: state that survives between commands | no |
 | `word.rs` | `Word` and `WordPart`: one argument before expansion | no |
@@ -70,7 +76,7 @@ Every command gets the same `&mut Shell`. That's how `cd` changes the directory 
 
 More fields (functions, aliases, positional arguments, options) are **planned** and get added when a feature needs them.
 
-`Shell` is `Clone`. Pipeline stages and subshells (**planned**) will run on a copy, which is Reef's replacement for `fork`.
+`Shell` is `Clone`. Subshells `( ... )` run on a copy, which is Reef's replacement for `fork`; pipeline stages (**planned**) will too.
 
 ## How a command is found
 
@@ -94,4 +100,4 @@ External programs start with `Shell::cwd` as their directory, only the exported 
 
 ## Planned, in order
 
-The parser (`|`, `&&`, `;`, redirects) → expansion (`$VAR`, `~`, globs) → pipelines → control flow and functions → editor features (history file, completion, highlighting).
+Redirects (new `Io` streams) → pipelines → expansion (`$VAR`, `~`, globs) → control flow and functions → editor features (history file, completion, highlighting).

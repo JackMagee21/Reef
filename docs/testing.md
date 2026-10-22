@@ -28,7 +28,7 @@ Rules about the source tree itself. Today: OS-specific `cfg` only inside `src/pl
 
 ### Unit tests: inside `src/`
 
-At the bottom of a source file, in a `#[cfg(test)] mod tests` block. They test one piece directly, without running Reef. Example: `src/lexer/mod.rs` checks the exact word parts and their quoted flags, which spec tests can't see. `src/repl.rs` tests what the prompt does with each line-editor event (a command, `exit`, Ctrl-C, Ctrl-D, a syntax error) without needing a real terminal; only the terminal drawing itself is checked by hand.
+At the bottom of a source file, in a `#[cfg(test)] mod tests` block. They test one piece directly, without running Reef. Example: `src/lexer/mod.rs` checks the exact word parts and their quoted flags, which spec tests can't see. `src/parser/mod.rs` prints each tree as one line (`[a] && [b]; ([c])`) so a test is one readable comparison, and checks every error message and column. `src/repl.rs` tests what the prompt does with each line-editor event (a command, `exit`, Ctrl-C, Ctrl-D, a syntax error) and when Enter continues an unfinished command, without needing a real terminal; only the terminal drawing itself is checked by hand.
 
 ## Rules
 

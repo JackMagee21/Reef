@@ -37,15 +37,7 @@ Quoted or escaped, these are just text: `'a;b'`, `"c|d"` and `e\&f` are ordinary
 
 **Reserved words** (`if`, `then`, `{`, `}`, `!`...) are deliberately **not** tokens here. `if` is only special at the start of a command (`echo if` prints `if`), so the parser decides.
 
-### Running operators (for now)
-
-The parser doesn't exist yet, so `run()` still runs one simple command. Any operator in it is reported with its column instead of being run wrongly:
-
-```
-reef: syntax error: `&&` (column 8) is not supported yet
-```
-
-Newlines at the start or end are fine, since piped mode ends every command with one.
+What the operators mean, and which ones run today, is in [parser.md](parser.md).
 
 ## Words keep their quoting
 
@@ -102,7 +94,7 @@ An unclosed quote, or `\` + newline at the very end, returns `LexError::Incomple
 
 - **Piped mode** reads the next line, adds it on and tries again, so `echo 'a` followed by `b'` prints `a`, newline, `b`, like bash. If the input ends first, it's a syntax error and the script stops with status 2.
 - **`-c`** has no next line, so it's a syntax error, like `bash -c`. One known difference: `-c 'echo a \<newline>'` is an error in Reef, while bash prints `a`.
-- **The prompt** still reports it as an error. Showing a continuation prompt and reading another line is **planned** with the parser.
+- **The prompt** starts a new line instead of running, so you can finish the command. The parser has its own "unfinished" cases too (`echo a &&`, `{ echo a;`), handled the same way: see [parser.md](parser.md).
 
 ## What the lexer doesn't do yet (planned)
 
