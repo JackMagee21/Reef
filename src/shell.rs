@@ -12,6 +12,9 @@ pub struct Shell {
     pub cwd: PathBuf,
     /// `$?`
     pub last_status: i32,
+    /// Set by `exit`. Whatever is running commands stops after the current one;
+    /// builtins never call `process::exit` themselves.
+    pub exit_requested: bool,
     /// Private so every write goes through `set_var` and its rules.
     vars: HashMap<String, Var>,
 }
@@ -29,8 +32,11 @@ impl Shell {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let mut sh = Shell {
-            cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            cwd: platform::clean_path(
+                std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            ),
             last_status: 0,
+            exit_requested: false,
             vars: HashMap::new(),
         };
         for (k, v) in std::env::vars() {
