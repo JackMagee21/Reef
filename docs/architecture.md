@@ -7,7 +7,7 @@ How a line of input travels through Reef today, and which file owns each step.
 | Command | What happens | Code |
 |---|---|---|
 | `reef` in a console | interactive `reef` prompt | `repl.rs` |
-| `reef` with piped input (`"echo hi" \| reef`) | each line of stdin runs as a command, like `sh`. Lines are read a byte at a time, so a program one line starts can read the lines after it, as in bash | `repl.rs` |
+| `reef` with piped input (`"echo hi" \| reef`) | each line of stdin runs as a command, like `sh`. A quote left open or a line ending in `\` carries on to the next line. A syntax error stops the script with status 2. Lines are read a byte at a time, so a program one line starts can read the lines after it, as in bash | `repl.rs` |
 | `reef -c "command"` | runs that one command and exits with its status | `main.rs` |
 | anything else | prints usage, exits with 2 | `main.rs` |
 
@@ -60,7 +60,8 @@ Every command gets the same `&mut Shell`. That's how `cd` changes the directory 
 |---|---|
 | `cwd` | the shell's current directory. Reef never calls `set_current_dir`; child programs get this directory explicitly |
 | `last_status` | the last exit status (`$?`) |
-| `exit_requested` | set by `exit`; the REPL and piped mode stop after the current command |
+| `exit_requested` | set by `exit`, and by a syntax error when not interactive; the REPL and piped mode stop after the current command |
+| `interactive` | true at the prompt, where a syntax error doesn't stop Reef |
 | `vars` (private) | variables and whether each is exported. Only exported ones reach child programs. Names are case-insensitive on Windows |
 
 More fields (functions, aliases, positional arguments, options) are **planned** and get added when a feature needs them.
@@ -82,7 +83,7 @@ External programs start with `Shell::cwd` as their directory, only the exported 
 | 0 | success |
 | 1 | general failure (for example a builtin couldn't write its output) |
 | 2 | syntax error, or bad usage of `reef` itself |
-| 126 | found but couldn't be started |
+| 126 | found but couldn't be started (no permission, a directory, a bad `#!` line) |
 | 127 | command not found |
 | 130 | stopped by Ctrl-C |
 | 128 + N | killed by signal N (Linux), or crashed (Windows: access violation → 139). `$?` is always 0-255 |

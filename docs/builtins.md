@@ -5,7 +5,7 @@ A builtin is a command Reef runs itself, as a Rust function, instead of starting
 ## Why some commands must be builtins
 
 - **They change the shell.** `cd`, `export` and `exit` change Reef's own state. A separate program only changes its own copy, which vanishes when it exits.
-- **They must work everywhere.** Windows has no `echo.exe`, `true.exe` or `false.exe`.
+- **They must work everywhere.** Plain Windows has no `echo.exe`, `true.exe` or `false.exe` (Git for Windows adds some, but Reef can't rely on it).
 - **Speed.** Starting a process costs milliseconds on Windows, and scripts call `echo` and `test` constantly.
 
 ## Today

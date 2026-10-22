@@ -25,6 +25,7 @@ Today the parts are simply joined (`Word::to_plain`) before running the command.
 | `#` inside a word | an ordinary character |
 | pieces with no space between them | join into one word |
 | unclosed `'` or `"` | `LexError::Incomplete` |
+| `\` then newline at the very end | `LexError::Incomplete`: the next line is still to come |
 
 ## Examples
 
@@ -51,7 +52,11 @@ Quote pairs are matched left to right, so `''` is an empty piece, not an escaped
 
 ## Incomplete input
 
-An unclosed quote returns `LexError::Incomplete` rather than a general error. Today Reef reports it as a syntax error with status 2. Once the parser exists, the interactive prompt will use it to show a continuation prompt and read another line instead (**planned**). With `-c` it stays an error, like `bash -c`.
+An unclosed quote, or `\` + newline at the very end, returns `LexError::Incomplete` rather than a general error. It means "there's more to come":
+
+- **Piped mode** reads the next line, adds it on and tries again, so `echo 'a` followed by `b'` prints `a`, newline, `b`, like bash. If the input ends first, it's a syntax error and the script stops with status 2.
+- **`-c`** has no next line, so it's a syntax error, like `bash -c`. One known difference: `-c 'echo a \<newline>'` is an error in Reef, while bash prints `a`.
+- **The prompt** still reports it as an error. Showing a continuation prompt and reading another line is **planned** with the parser.
 
 ## What the lexer doesn't do yet (planned)
 

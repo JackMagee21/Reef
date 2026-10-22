@@ -19,7 +19,8 @@ Run `make check` before every commit. If it passes, CI should too.
 These run the real `reef` program, the way a user would.
 
 - **The `CASES` table.** Each row is an input, the exact expected stdout and the expected exit status. Every row runs as `reef -c "input"`. When cases fail, all of them are listed at once with `want` and `got`.
-- **A few separate tests** for things `CASES` can't express: unknown arguments exit with 2, piped stdin runs line by line, piped mode exits with the last command's status, `exit` stops reading, `cd`/`pwd` keep their directory between lines, and a program run from piped stdin can read the lines after it.
+- **The `ERRORS` table.** Each row is an input, the exact expected stderr and the exit status, so error messages are tested too.
+- **A few separate tests** for things the tables can't express: unknown arguments exit with 2, piped stdin runs line by line, piped mode exits with the last command's status, `exit` stops reading, `cd`/`pwd` keep their directory between lines, a program run from piped stdin can read the lines after it, quotes and `\` can span lines, and a syntax error stops a script. Some only run on Linux (no execute bit → 126, empty `PATH` entries).
 
 ### Layout tests: `tests/layout.rs`
 
@@ -27,13 +28,13 @@ Rules about the source tree itself. Today: OS-specific `cfg` only inside `src/pl
 
 ### Unit tests: inside `src/`
 
-At the bottom of a source file, in a `#[cfg(test)] mod tests` block. They test one piece directly, without running Reef. Example: `src/lexer/mod.rs` checks the exact word parts and their quoted flags, which spec tests can't see.
+At the bottom of a source file, in a `#[cfg(test)] mod tests` block. They test one piece directly, without running Reef. Example: `src/lexer/mod.rs` checks the exact word parts and their quoted flags, which spec tests can't see. `src/repl.rs` tests what the prompt does with each line-editor event (a command, `exit`, Ctrl-C, Ctrl-D, a syntax error) without needing a real terminal; only the terminal drawing itself is checked by hand.
 
 ## Rules
 
 - **Write the test before the code.** Add the new `CASES` rows, watch them fail, then implement.
 - **Never delete a passing case.** The table is the regression net. If behavior changes on purpose, change the expected value and say why in the commit.
-- **Only use commands that behave the same on Windows and Linux** in `CASES`: Reef's own builtins, not `ls` or `dir`. Windows has no `echo.exe`, so `echo hi` passing on Windows proves Reef ran its own builtin.
+- **Only use commands that behave the same on Windows and Linux** in `CASES`: Reef's own builtins, not `ls` or `dir`. Builtins are looked up before `PATH`, so `echo hi` always runs Reef's own `echo`, even where Git for Windows puts an `echo.exe` on `PATH`.
 - **Cases waiting for a feature stay in the table, commented out**, with a note saying what they wait for.
 - **When you test something by hand and it works, add it as a case.**
 
