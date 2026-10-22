@@ -24,7 +24,7 @@ pub fn echo(_sh: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
         Ok(()) => 0,
         Err(e) => {
             // If stderr is broken too, there's nowhere left to report it
-            let _ = io.write_err(format!("echo: write error: {e}\n").as_bytes());
+            let _ = io.write_err(format!("reef: echo: write error: {e}\n").as_bytes());
             1
         }
     }
