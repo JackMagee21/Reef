@@ -35,6 +35,9 @@ const CASES: &[(&str, &str, i32)] = &[
     ("echo 'a", "", 2),
     ("echo \"a", "", 2),
     ("echo \"hello '6' \"\"", "", 2),
+    // Quoted or escaped, operator characters are just text
+    ("echo 'a;b' \"c|d\" e\\&f g\\>h", "a;b c|d e&f g>h\n", 0),
+    ("echo hi\n", "hi\n", 0),
     // true / false
     ("true", "", 0),
     ("true ignores args", "", 0),
@@ -108,6 +111,27 @@ const ERRORS: &[(&str, &str, i32)] = &[
         2,
     ),
     ("exit 1 2", "reef: exit: too many arguments\n", 1),
+    // Operators are lexed, but running them waits for the parser (change these then)
+    (
+        "echo a; echo b",
+        "reef: syntax error: `;` (column 7) is not supported yet\n",
+        2,
+    ),
+    (
+        "echo hi 2>&1",
+        "reef: syntax error: `>&` (column 10) is not supported yet\n",
+        2,
+    ),
+    (
+        "echo é | x",
+        "reef: syntax error: `|` (column 8) is not supported yet\n",
+        2,
+    ),
+    (
+        "echo a\necho b",
+        "reef: syntax error: `\\n` (column 7) is not supported yet\n",
+        2,
+    ),
 ];
 
 #[test]
