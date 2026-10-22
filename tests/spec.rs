@@ -29,9 +29,27 @@ const CASES: &[(&str, &str, i32)] = &[
     ("echo hi # a comment", "hi\n", 0),
     ("echo a#b", "a#b\n", 0),
     ("# only a comment", "", 0),
+    ("echo \"hello \"78\" \"", "hello 78 \n", 0),
+    ("echo '''sssa''''54 having it'", "sssa54 having it\n", 0),
     // Unclosed quotes are a syntax error for now (multi-line input comes with the parser)
     ("echo 'a", "", 2),
     ("echo \"a", "", 2),
+    ("echo \"hello '6' \"\"", "", 2),
+    // true / false
+    ("true", "", 0),
+    ("true ignores args", "", 0),
+    ("false", "", 1),
+    // exit
+    ("exit", "", 0),
+    ("exit 3", "", 3),
+    ("exit 300", "", 44),
+    ("exit -1", "", 255),
+    ("exit abc", "", 2),
+    ("exit 1 2", "", 1),
+    // cd errors (cd + pwd together need piped stdin, see below)
+    ("cd nosuchdir_reef_test", "", 1),
+    ("cd a b", "", 1),
+    ("cd Cargo.toml", "", 1),
 ];
 
 #[test]
@@ -80,4 +98,99 @@ fn piped_stdin_exits_with_last_status() {
         .write_stdin("echo hi\nnosuchcmd_reef_test\n")
         .assert()
         .code(127);
+}
+
+#[test]
+fn exit_stops_reading_lines() {
+    Command::cargo_bin("reef")
+        .unwrap()
+        .write_stdin("exit 3\necho after\n")
+        .assert()
+        .code(3)
+        .stdout("");
+}
+
+#[test]
+fn exit_without_args_uses_last_status() {
+    Command::cargo_bin("reef")
+        .unwrap()
+        .write_stdin("false\nexit\necho after\n")
+        .assert()
+        .code(1)
+        .stdout("");
+}
+
+#[test]
+fn exit_with_too_many_args_keeps_going() {
+    Command::cargo_bin("reef")
+        .unwrap()
+        .write_stdin("exit 1 2\necho still here\n")
+        .assert()
+        .success()
+        .stdout("still here\n");
+}
+
+// ---- cd / pwd: run from the repo root and compare real paths ----
+
+const ROOT: &str = env!("CARGO_MANIFEST_DIR");
+
+/// Run `lines` through piped stdin from the repo root; returns the last line printed.
+fn last_line_in_root(lines: &str, envs: &[(&str, &str)]) -> String {
+    let o = Command::cargo_bin("reef")
+        .unwrap()
+        .current_dir(ROOT)
+        .envs(envs.iter().copied())
+        .write_stdin(lines)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{lines:?} failed: {o:?}");
+    let out = String::from_utf8(o.stdout).unwrap();
+    let last = out.lines().last().unwrap_or_default().to_string();
+    // Windows' \\?\ prefix must never reach the user
+    assert!(!last.starts_with(r"\\?\"), "{last}");
+    last
+}
+
+fn same_dir(got: &str, want: &std::path::Path) -> bool {
+    std::fs::canonicalize(got).unwrap() == std::fs::canonicalize(want).unwrap()
+}
+
+#[test]
+fn pwd_prints_starting_dir() {
+    let got = last_line_in_root("pwd\n", &[]);
+    assert!(same_dir(&got, ROOT.as_ref()), "{got}");
+}
+
+#[test]
+fn cd_changes_dir_for_later_commands() {
+    let got = last_line_in_root("cd src\npwd\n", &[]);
+    assert!(
+        same_dir(&got, &std::path::Path::new(ROOT).join("src")),
+        "{got}"
+    );
+}
+
+#[test]
+fn cd_dotdot_goes_up() {
+    let got = last_line_in_root("cd src\ncd ..\npwd\n", &[]);
+    assert!(same_dir(&got, ROOT.as_ref()), "{got}");
+}
+
+#[test]
+fn cd_dash_goes_back_and_prints_it() {
+    let got = last_line_in_root("cd src\ncd -\n", &[]);
+    assert!(same_dir(&got, ROOT.as_ref()), "{got}");
+}
+
+#[test]
+fn cd_without_args_goes_home() {
+    let home = std::path::Path::new(ROOT).join("src");
+    let got = last_line_in_root("cd\npwd\n", &[("HOME", home.to_str().unwrap())]);
+    assert!(same_dir(&got, &home), "{got}");
+}
+
+#[test]
+fn failed_cd_leaves_dir_unchanged() {
+    let got = last_line_in_root("cd nosuchdir_reef_test\npwd\n", &[]);
+    assert!(same_dir(&got, ROOT.as_ref()), "{got}");
 }
