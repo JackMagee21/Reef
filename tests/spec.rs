@@ -131,6 +131,23 @@ const CASES: &[(&str, &str, i32)] = &[
     ("{ echo a; echo b 1>&2; } 2>/dev/null", "a\n", 0),
     ("{ echo a; echo b; } >/dev/null; echo c", "c\n", 0),
     ("echo hi < missing_reef_file || echo failed", "failed\n", 0),
+    // type: builtins win over programs; any name not found makes the status 1
+    ("type echo", "echo is a shell builtin\n", 0),
+    ("type type", "type is a shell builtin\n", 0),
+    (
+        "type echo true",
+        "echo is a shell builtin\ntrue is a shell builtin\n",
+        0,
+    ),
+    ("type", "", 0),
+    ("type nosuch_reef_test", "", 1),
+    (
+        "type echo nosuch_reef_test cd",
+        "echo is a shell builtin\ncd is a shell builtin\n",
+        1,
+    ),
+    ("type nosuch_reef_test || echo missing", "missing\n", 0),
+    ("type echo > /dev/null", "", 0),
 ];
 
 #[test]
@@ -191,6 +208,20 @@ const ERRORS: &[(&str, &str, i32)] = &[
         2,
     ),
     ("exit 1 2", "reef: exit: too many arguments\n", 1),
+    ("type echo", "", 0),
+    (
+        "type nosuch_reef_test",
+        "reef: type: nosuch_reef_test: not found\n",
+        1,
+    ),
+    // every missing name is reported, not just the first
+    (
+        "type nosuch_a echo nosuch_b",
+        "reef: type: nosuch_a: not found\nreef: type: nosuch_b: not found\n",
+        1,
+    ),
+    // the error goes through Reef's streams, so `2>` can redirect it
+    ("type nosuch_reef_test 2>/dev/null", "", 1),
     // Parsed, but running them needs new Io streams (change these when they land)
     (
         "echo é | x",
@@ -566,4 +597,56 @@ fn a_failed_redirect_skips_the_command_but_not_the_script() {
         .stdout("b\n");
     // a directory can't be written as a file (the message differs by OS)
     reef_in(&dir, "echo hi > .").code(1).stdout("");
+}
+
+// ---- type: finding real programs (paths differ per machine, so not in the tables) ----
+
+#[test]
+fn type_shows_the_path_of_a_program_given_by_path() {
+    let exe = assert_cmd::cargo::cargo_bin("reef");
+    let src = format!("type '{}'", exe.display());
+    let out = reef().args(["-c", &src]).output().unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    assert!(
+        stdout.contains(&format!("is {}", exe.display())),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn type_finds_programs_on_path() {
+    // PATH holds only the folder with Reef's binary, so `reef` must be found there
+    // (on Windows `reef` becomes `reef.exe` through PATHEXT)
+    let exe = assert_cmd::cargo::cargo_bin("reef");
+    let dir = exe.parent().unwrap();
+    let out = reef()
+        .env("PATH", dir)
+        .args(["-c", "type reef"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    assert!(stdout.starts_with("reef is "), "{stdout}");
+    assert!(stdout.contains(&dir.display().to_string()), "{stdout}");
+}
+
+#[test]
+fn type_prefers_a_builtin_over_a_program_with_the_same_name() {
+    // a fake `echo` program on PATH must not win over the builtin
+    let dir = temp_dir("type_builtin_wins");
+    let exe = assert_cmd::cargo::cargo_bin("reef");
+    let fake = dir.join(
+        exe.file_name()
+            .unwrap()
+            .to_string_lossy()
+            .replace("reef", "echo"),
+    );
+    std::fs::copy(&exe, &fake).unwrap();
+    reef()
+        .env("PATH", &dir)
+        .args(["-c", "type echo"])
+        .assert()
+        .success()
+        .stdout("echo is a shell builtin\n");
 }
