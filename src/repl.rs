@@ -2,12 +2,35 @@
 
 use std::io::{ErrorKind, IsTerminal, Read};
 
-use reedline::{DefaultPrompt, DefaultPromptSegment, Reedline, Signal};
+use reedline::{
+    DefaultPrompt, DefaultPromptSegment, Reedline, Signal, ValidationResult, Validator,
+};
 
 use crate::io::Io;
-use crate::lexer::{self, LexError};
+use crate::parser::{self, ParseError};
 use crate::platform;
 use crate::shell::Shell;
+
+/// True when `src` stops in the middle of a command (`echo a &&`, `{ echo`, an
+/// open quote), so the next line belongs to the same command.
+// ponytail: parses twice (here and in run); fine while inputs are lines a person typed
+fn unfinished(src: &str) -> bool {
+    matches!(parser::parse(src), Err(ParseError::Incomplete(_)))
+}
+
+/// Tells the line editor when Enter should start a new line instead of running.
+struct Continue;
+
+impl Validator for Continue {
+    fn validate(&self, line: &str) -> ValidationResult {
+        // The editor's text has no final newline; add it so a line ending in `\` continues
+        if unfinished(&format!("{line}\n")) {
+            ValidationResult::Incomplete
+        } else {
+            ValidationResult::Complete
+        }
+    }
+}
 
 /// Interactive when stdin is a console, otherwise run each line of stdin like a script.
 /// Returns the status Reef should exit with.
@@ -19,9 +42,9 @@ pub fn run(sh: &mut Shell, io: &mut Io) -> i32 {
     }
 }
 
-// shortcut: no history file, completion or multi-line input yet; those come with the parser and editor work
+// shortcut: no history file or completion yet; those come with the editor work
 fn interactive(sh: &mut Shell, io: &mut Io) -> i32 {
-    let mut editor = Reedline::create();
+    let mut editor = Reedline::create().with_validator(Box::new(Continue));
     let prompt = DefaultPrompt::new(
         DefaultPromptSegment::Basic("reef".into()),
         DefaultPromptSegment::Empty,
@@ -83,8 +106,7 @@ fn piped(sh: &mut Shell, io: &mut Io) -> i32 {
             Ok(Some(line)) => {
                 cmd.push_str(&line);
                 cmd.push('\n');
-                // ponytail: lexes twice (here and in run); the parser will report Incomplete itself
-                if matches!(lexer::lex(&cmd), Err(LexError::Incomplete(_))) {
+                if unfinished(&cmd) {
                     continue;
                 }
             }
@@ -161,6 +183,20 @@ mod tests {
         let mut sh = Shell::new();
         step(Signal::Success("false".into()), &mut sh);
         assert_eq!(step(Signal::CtrlD, &mut sh), Some(1));
+    }
+
+    #[test]
+    fn enter_continues_an_unfinished_command() {
+        let incomplete = |line| matches!(Continue.validate(line), ValidationResult::Incomplete);
+        assert!(incomplete("echo a &&"));
+        assert!(incomplete("{ echo a"));
+        assert!(incomplete("echo 'a"));
+        assert!(incomplete("echo a \\"));
+        assert!(incomplete("echo a &&\n"));
+        // complete, or wrong (an error is reported, not waited on)
+        assert!(!incomplete("echo a"));
+        assert!(!incomplete("echo a && echo b"));
+        assert!(!incomplete("echo )"));
     }
 
     #[test]
