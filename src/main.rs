@@ -55,7 +55,7 @@ fn run(src: &str, sh: &mut Shell, io: &mut Io) -> i32 {
     match checked {
         Ok(list) => exec::list(&list, sh, io),
         Err(message) => {
-            let _ = io.write_err(format!("reef: syntax error: {message}\n").as_bytes());
+            io.error(format_args!("syntax error: {message}"));
             // POSIX: a script stops at a syntax error instead of running the lines after it
             if !sh.interactive {
                 sh.exit_requested = true;

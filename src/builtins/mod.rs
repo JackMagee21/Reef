@@ -22,3 +22,15 @@ const BUILTINS: &[(&str, Builtin)] = &[
 pub fn lookup(name: &str) -> Option<Builtin> {
     BUILTINS.iter().find(|(n, _)| *n == name).map(|&(_, f)| f)
 }
+
+/// Write a builtin's output. Returns the builtin's status: 0, or 1 after
+/// reporting `reef: <name>: write error: ...` if the output couldn't be written.
+fn print(io: &mut Io, name: &str, text: &str) -> i32 {
+    match io.write_out(text.as_bytes()) {
+        Ok(()) => 0,
+        Err(e) => {
+            io.error(format_args!("{name}: write error: {e}"));
+            1
+        }
+    }
+}

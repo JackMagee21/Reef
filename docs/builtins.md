@@ -42,7 +42,11 @@ Unused parameters get a leading `_` (for example `_sh`). Keeping one shape means
 
 1. **Spec cases first.** Add rows to `CASES` in `tests/spec.rs`: what it should print and what status it returns. Run `cargo test` and watch them fail.
 2. **One file per command**, named after it: `builtins/pwd.rs`. Commands with two names share one file (`test` and `[` will live in `test.rs`). Rust keywords can't be file names, so `true` and `false` will need names like `true_cmd.rs`.
-3. **Write the function** with the shape above. Output goes through `io.write_out` / `io.write_err`. Errors are a message plus a non-zero status, never a panic.
+3. **Write the function** with the shape above. Two helpers do the common parts:
+   - `super::print(io, "name", text)` writes the output and returns the status: 0, or 1 after reporting `reef: name: write error: ...`.
+   - `io.error(format_args!("name: {what}"))` reports an error as `reef: name: ...`.
+
+   Errors are a message plus a non-zero status, never a panic.
 4. **Declare the module and add one line to `BUILTINS`** in `builtins/mod.rs`.
 5. **`make check`** before committing.
 

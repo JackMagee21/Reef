@@ -28,6 +28,7 @@ Reef's own stdout and stderr are separate kinds, not one "terminal" kind. With `
 |---|---|---|
 | `Io::terminal()` | `main.rs` | an `Io` where everything goes to Reef's console |
 | `write_out` / `write_err` | builtins | write bytes; returns an error instead of panicking |
+| `error(message)` | builtins, `exec.rs`, `main.rs` | report `reef: <message>` on stderr. The one place that ignores a failed write to stderr, since there's nowhere left to report it |
 | `for_child()` | `run()` | gives an external program copies of the three handles, so the `Io` is reusable afterwards |
 | `flush()` | `main.rs`, `repl.rs`, `run()` | push buffered output to the console |
 | `Stream::try_clone` | `for_child`, later `2>&1` | a second handle to the same place. Not `Clone`, because duplicating a file or pipe handle can fail |

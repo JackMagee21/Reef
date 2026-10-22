@@ -20,12 +20,5 @@ pub fn echo(_sh: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
         out.push('\n');
     }
 
-    match io.write_out(out.as_bytes()) {
-        Ok(()) => 0,
-        Err(e) => {
-            // If stderr is broken too, there's nowhere left to report it
-            let _ = io.write_err(format!("reef: echo: write error: {e}\n").as_bytes());
-            1
-        }
-    }
+    super::print(io, "echo", &out)
 }

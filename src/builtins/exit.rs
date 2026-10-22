@@ -14,15 +14,13 @@ pub fn exit(sh: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
         Some(arg) => match arg.parse::<i64>() {
             // A bad number still exits, like bash
             Err(_) => {
-                let _ = io.write_err(
-                    format!("reef: exit: {arg}: numeric argument required\n").as_bytes(),
-                );
+                io.error(format_args!("exit: {arg}: numeric argument required"));
                 sh.exit_requested = true;
                 return 2;
             }
             // Too many arguments is an error that does NOT exit, like bash
             Ok(_) if argv.len() > 2 => {
-                let _ = io.write_err(b"reef: exit: too many arguments\n");
+                io.error("exit: too many arguments");
                 return 1;
             }
             Ok(n) => n.rem_euclid(256) as i32,

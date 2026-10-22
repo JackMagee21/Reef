@@ -3,6 +3,7 @@
 //! Builtins never print directly: they write through `Io`, so redirects and
 //! pipes only ever change this file, never the builtins.
 
+use std::fmt;
 use std::io::{self, Write};
 use std::process::Stdio;
 
@@ -74,6 +75,12 @@ impl Io {
     /// Error output, for builtins.
     pub fn write_err(&mut self, bytes: &[u8]) -> io::Result<()> {
         self.stderr.write_all(bytes)
+    }
+
+    /// Report an error as `reef: <message>`, e.g. `io.error(format_args!("cd: {dir}: Not a directory"))`.
+    pub fn error(&mut self, message: impl fmt::Display) {
+        // If stderr itself is broken there's nowhere left to report it
+        let _ = self.write_err(format!("reef: {message}\n").as_bytes());
     }
 
     /// Handles for a child process: (stdin, stdout, stderr).

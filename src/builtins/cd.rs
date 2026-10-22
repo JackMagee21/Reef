@@ -14,7 +14,7 @@ use crate::shell::Shell;
 /// On success `PWD` and `OLDPWD` are updated and exported.
 pub fn cd(sh: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
     let fail = |io: &mut Io, msg: &str| {
-        let _ = io.write_err(format!("reef: cd: {msg}\n").as_bytes());
+        io.error(format_args!("cd: {msg}"));
         1
     };
 
@@ -44,10 +44,9 @@ pub fn cd(sh: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
     sh.set_var("OLDPWD", old.display().to_string(), true);
     sh.set_var("PWD", sh.cwd.display().to_string(), true);
 
-    if argv.get(1).is_some_and(|a| a == "-")
-        && let Err(e) = io.write_out(format!("{}\n", sh.cwd.display()).as_bytes())
-    {
-        return fail(io, &format!("write error: {e}"));
+    // `cd -` prints where it went
+    if argv.get(1).is_some_and(|a| a == "-") {
+        return super::print(io, "cd", &format!("{}\n", sh.cwd.display()));
     }
     0
 }
