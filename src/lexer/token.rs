@@ -68,6 +68,30 @@ pub enum Op {
 }
 
 impl Op {
+    /// How it's written, for messages. A newline is `newline`, like bash.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Op::Newline => "newline",
+            Op::Semi => ";",
+            Op::DSemi => ";;",
+            Op::Amp => "&",
+            Op::AndIf => "&&",
+            Op::Pipe => "|",
+            Op::OrIf => "||",
+            Op::LParen => "(",
+            Op::RParen => ")",
+            Op::Less => "<",
+            Op::Great => ">",
+            Op::DGreat => ">>",
+            Op::LessAnd => "<&",
+            Op::GreatAnd => ">&",
+            Op::LessGreat => "<>",
+            Op::Clobber => ">|",
+            Op::DLess => "<<",
+            Op::DLessDash => "<<-",
+        }
+    }
+
     /// Operators that a number like the `2` in `2>file` can come before.
     pub fn is_redirect(self) -> bool {
         matches!(
