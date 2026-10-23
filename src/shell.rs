@@ -88,4 +88,8 @@ impl Shell {
             .filter(|(_, v)| v.exported)
             .map(|(k, v)| (k.as_str(), v.value.as_str()))
     }
+
+    pub fn unset_var(&mut self, name: &str) {
+        self.vars.remove(&platform::var_key(name));
+    }
 }
