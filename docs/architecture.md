@@ -75,7 +75,7 @@ Every command gets the same `&mut Shell`. That's how `cd` changes the directory 
 | `last_status` | `$?`. Written by `exec` after every pipeline (and when a line can't run at all), and by the prompt for Ctrl-C. Everything else only reads it |
 | `stop_requested` | set by `exit`, and by a syntax error when not interactive; the prompt and piped mode stop after the current command |
 | `interactive` | true at the prompt, where a syntax error doesn't stop Reef |
-| `vars` (private) | variables and whether each is exported. Only exported ones reach child programs. Names are case-insensitive on Windows |
+| `vars` (private) | variables and whether each is exported, read with `var` and changed only through `set_var` and `unset_var`. Only exported ones reach child programs. Names are case-insensitive on Windows |
 
 More fields (functions, aliases, positional arguments, options) are **planned** and get added when a feature needs them.
 
