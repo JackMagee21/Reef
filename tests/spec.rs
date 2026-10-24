@@ -148,6 +148,9 @@ const CASES: &[(&str, &str, i32)] = &[
     ),
     ("type nosuch_reef_test || echo missing", "missing\n", 0),
     ("type echo > /dev/null", "", 0),
+    ("unset FOO && echo ok", "ok\n", 0),
+    ("unset FOO", "", 0),
+    ("unset PATH; type echo", "echo is a shell builtin\n", 0),
 ];
 
 #[test]
