@@ -4,7 +4,7 @@ use crate::streams::Io;
 
 pub fn export_cmd(sh: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
     let args: &[String] = argv.get(1..).unwrap_or(&[]);
-    let mut failed: bool = false;
+    let failed: bool = false;
     for argument in args {
        let (name, value) = match argument.split_once('=') {
            Some((name, value)) => (name, Some(value)),
