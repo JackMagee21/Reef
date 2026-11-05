@@ -51,7 +51,7 @@ exit status (i32)  →  Shell::last_status  ($?)
 | File | Owns | Depends on the OS? |
 |---|---|---|
 | `main.rs` | startup and argument handling only | no |
-| `update.rs` | `reef --update`: reinstall the newest version with `cargo install`, into the same folder | no (the Windows rename is in `platform/`) |
+| `update.rs` | `reef --update`: reinstall the newest version with `cargo install`, into the same folder. `reef --check-update`: compare the installed commit with GitHub's | no (the Windows rename is in `platform/`) |
 | `status.rs` | the exit statuses with a fixed meaning (`SYNTAX_ERROR`, `NOT_FOUND`...) and `negate` for `!` | no |
 | `parser/mod.rs` | `parse()`: tokens into a tree, with incomplete and syntax errors | no |
 | `ast.rs` | the tree types: `List`, `Item`, `AndOr`, `Pipeline`, `Command`, `Redirect` | no |

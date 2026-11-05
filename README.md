@@ -26,10 +26,11 @@ Or from a clone: `cargo run`, or `make run`.
 ## Update
 
 ```sh
-reef --update
+reef --check-update   # is there a newer version? (status 0: no, 1: yes)
+reef --update         # install it
 ```
 
-Rebuilds the newest commit from GitHub and replaces the installed `reef`, wherever it was installed. If it's already the newest, nothing is rebuilt. Works from inside Reef too; the new version is used the next time you start `reef`.
+`--check-update` compares the commit you have with the newest on GitHub, without downloading anything (it needs `git`). `--update` rebuilds the newest commit from GitHub and replaces the installed `reef`, wherever it was installed. If it's already the newest, nothing is rebuilt. Works from inside Reef too; the new version is used the next time you start `reef`.
 
 ## Use it as your terminal's shell
 
