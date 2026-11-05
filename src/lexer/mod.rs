@@ -51,13 +51,7 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
 
             '"' => read_double_quoted(&mut chars, word(&mut cur, i))?,
 
-            '$' => {
-                let w = word(&mut cur, i);
-                match read_param(&mut chars, false)? {
-                    Some(param) => w.parts.push(param),
-                    None => w.push_char('$', false),
-                }
-            }
+            '$' => read_dollar(&mut chars, word(&mut cur, i), false)?,
 
             // Unquoted backslash: the next character is literal
             '\\' => match chars.next() {
@@ -166,29 +160,28 @@ fn read_double_quoted(chars: &mut Peekable<CharIndices>, word: &mut Word) -> Res
                 // any other backslash stays as-is: "a\b" is a\b
                 _ => word.push_char('\\', true),
             },
-            Some((_, '$')) => match read_param(chars, true)? {
-                Some(param) => word.parts.push(param),
-                None => word.push_char('$', true),
-            },
+            Some((_, '$')) => read_dollar(chars, word, true)?,
             Some((_, c)) => word.push_char(c, true),
             None => return Err(LexError::Incomplete("unclosed \"")),
         }
     }
 }
 
-/// What follows a `$`: `name`, `{anything}` or `?`. `None` when it's none of
-/// those, and the `$` is just a character (`echo $` or `a$ b`).
+/// What follows a `$`, added to `word`: `name`, `{anything}` or `?` become a
+/// `Param`; before anything else the `$` is just a character (`echo $`, `a$ b`).
 // shortcut: `$1`, `$#`, `$$`, `$@` stay literal; add them with positional arguments
-fn read_param(
+fn read_dollar(
     chars: &mut Peekable<CharIndices>,
+    word: &mut Word,
     quoted: bool,
-) -> Result<Option<WordPart>, LexError> {
-    let param = |name: String, braced| {
-        Some(WordPart::Param {
+) -> Result<(), LexError> {
+    let mut param = |name: String, braced| {
+        word.parts.push(WordPart::Param {
             name,
             braced,
             quoted,
-        })
+        });
+        Ok(())
     };
     match chars.peek() {
         Some((_, '{')) => {
@@ -196,7 +189,7 @@ fn read_param(
             let mut name = String::new();
             loop {
                 match chars.next() {
-                    Some((_, '}')) => return Ok(param(name, true)),
+                    Some((_, '}')) => return param(name, true),
                     Some((_, c)) => name.push(c),
                     None => return Err(LexError::Incomplete("unclosed ${")),
                 }
@@ -204,7 +197,7 @@ fn read_param(
         }
         Some((_, '?')) => {
             chars.next();
-            Ok(param("?".into(), false))
+            param("?".into(), false)
         }
         Some(&(_, c)) if c.is_ascii_alphabetic() || c == '_' => {
             let mut name = String::new();
@@ -212,9 +205,12 @@ fn read_param(
             {
                 name.push(c);
             }
-            Ok(param(name, false))
+            param(name, false)
         }
-        _ => Ok(None),
+        _ => {
+            word.push_char('$', quoted);
+            Ok(())
+        }
     }
 }
 

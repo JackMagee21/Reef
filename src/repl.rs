@@ -112,11 +112,8 @@ struct UnixPrompt {
 
 impl UnixPrompt {
     fn new(sh: &Shell) -> Self {
-        let user = platform::USER_VARS
-            .iter()
-            .find_map(|v| sh.var(v))
-            .unwrap_or("user");
-        let home = platform::HOME_VARS.iter().find_map(|v| sh.var(v));
+        let user = sh.first_var(platform::USER_VARS).unwrap_or("user");
+        let home = sh.first_var(platform::HOME_VARS);
         let user_host = format!("{user}@{}", platform::host_name(sh));
         UnixPrompt {
             left: format!(

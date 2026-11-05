@@ -139,12 +139,7 @@ impl Parser<'_> {
             self.pos += 1;
             // `a &&` can continue on the next line
             self.skip_newlines();
-            let op = if connector == Connector::And {
-                "&&"
-            } else {
-                "||"
-            };
-            self.need_command(op)?;
+            self.need_command(connector.as_str())?;
             rest.push((connector, self.pipeline()?));
         }
     }
@@ -376,8 +371,7 @@ mod tests {
     fn and_or(a: &AndOr) -> String {
         let mut s = pipeline(&a.first);
         for (c, p) in &a.rest {
-            s += if *c == Connector::And { " && " } else { " || " };
-            s += &pipeline(p);
+            s += &format!(" {} {}", c.as_str(), pipeline(p));
         }
         s
     }

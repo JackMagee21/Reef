@@ -45,6 +45,16 @@ pub enum Connector {
     Or,
 }
 
+impl Connector {
+    /// How it's written: `&&` or `||`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Connector::And => "&&",
+            Connector::Or => "||",
+        }
+    }
+}
+
 /// `! a | b | c`
 pub struct Pipeline {
     /// Starts with `!`: the status is flipped (0 becomes 1, anything else 0).

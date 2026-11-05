@@ -19,7 +19,7 @@ pub fn cd(sh: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
     };
 
     let target = match argv.get(1..).unwrap_or(&[]) {
-        [] => match platform::HOME_VARS.iter().find_map(|v| sh.var(v)) {
+        [] => match sh.first_var(platform::HOME_VARS) {
             Some(home) => home.to_string(),
             None => return fail(io, "HOME not set"),
         },

@@ -69,6 +69,11 @@ impl Shell {
         self.set_var("PWD", self.cwd.display().to_string(), true);
     }
 
+    /// The first of `names` that's set, e.g. `sh.first_var(platform::HOME_VARS)`.
+    pub fn first_var(&self, names: &[&str]) -> Option<&str> {
+        names.iter().find_map(|name| self.var(name))
+    }
+
     pub fn var(&self, name: &str) -> Option<&str> {
         self.vars
             .get(&platform::var_key(name))

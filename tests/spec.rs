@@ -442,12 +442,8 @@ fn a_file_that_cant_run_is_126_not_127() {
 fn empty_path_entry_means_the_shells_dir() {
     // An empty PATH entry means "the current directory", which must be the one
     // Reef `cd`ed into, not the one it started in.
-    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("reef_path_test");
-    std::fs::create_dir_all(&dir).unwrap();
-    let script = dir.join("reef_hello");
-    std::fs::write(&script, "#!/bin/sh\necho hello\n").unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let dir = temp_dir("reef_path_test");
+    hello_script(&dir, "reef_hello");
     reef()
         .env("PATH", ":/usr/bin:/bin")
         .write_stdin(format!("cd '{}'\nreef_hello\n", dir.display()))

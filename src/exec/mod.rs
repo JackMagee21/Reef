@@ -173,11 +173,8 @@ fn run_command(c: &Command, sh: &mut Shell, io: &mut Io) -> i32 {
 /// (left to right, so `x=1 y=$x` works). Before a program, they're only in its
 /// environment.
 fn simple(words: &[Word], sh: &mut Shell, io: &mut Io) -> i32 {
-    let split = words
-        .iter()
-        .position(|w| w.assignment().is_none())
-        .unwrap_or(words.len());
-    let (assignments, words) = words.split_at(split);
+    let assignments: Vec<(String, Word)> = words.iter().map_while(Word::assignment).collect();
+    let words = &words[assignments.len()..];
 
     // `export x=$y` must not split `$y`, like a plain `x=$y` (POSIX "declaration utility")
     let declares = words.first().and_then(Word::as_unquoted) == Some("export");
@@ -190,15 +187,14 @@ fn simple(words: &[Word], sh: &mut Shell, io: &mut Io) -> i32 {
         .collect();
 
     let Some(name) = argv.first() else {
-        for (name, value) in assignments.iter().filter_map(Word::assignment) {
-            let value = expand::single(&value, sh);
-            sh.set_var(&name, value, false);
+        for (name, value) in &assignments {
+            let value = expand::single(value, sh);
+            sh.set_var(name, value, false);
         }
         return 0;
     };
     let env: Vec<(String, String)> = assignments
-        .iter()
-        .filter_map(Word::assignment)
+        .into_iter()
         .map(|(name, value)| (name, expand::single(&value, sh)))
         .collect();
 
