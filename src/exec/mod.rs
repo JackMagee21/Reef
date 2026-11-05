@@ -146,7 +146,10 @@ fn command(c: &Command, sh: &mut Shell, outer: &mut Io) -> i32 {
     }
     // Output still buffered for the screen must come out before anything
     // written through the new streams, e.g. `echo -n a; echo b >&2`
-    let _ = outer.flush();
+    // A broken screen shouldn't stop `> file` from working, so report and carry on
+    if let Err(e) = outer.flush() {
+        outer.error(format_args!("write error: {e}"));
+    }
     match redirect::apply(c.redirects(), sh, outer) {
         Ok(mut own) => run_command(c, sh, &mut own),
         // The redirect failed, so the command doesn't run
