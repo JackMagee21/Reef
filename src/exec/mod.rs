@@ -11,7 +11,7 @@ use crate::parser;
 use crate::platform;
 use crate::shell::Shell;
 use crate::status;
-use crate::streams::Io;
+use crate::streams::{Io, describe_error};
 use crate::word::Word;
 
 /// Parse and run one complete input: a line from the prompt, a `-c` string,
@@ -194,9 +194,17 @@ fn simple(argv: &[String], sh: &mut Shell, io: &mut Io) -> i32 {
 
     match result {
         Ok(s) => platform::exit_status(s),
+        // The program is there, but the shell's directory was deleted under it
+        Err(_) if !sh.cwd().is_dir() => {
+            io.error(format_args!(
+                "{name}: current directory {} no longer exists",
+                sh.cwd().display()
+            ));
+            status::CANNOT_RUN
+        }
         // Found but couldn't start: no permission, a directory, a bad `#!` line
         Err(e) => {
-            io.error(format_args!("{name}: {e}"));
+            io.error(format_args!("{name}: {}", describe_error(&e)));
             if e.kind() == std::io::ErrorKind::NotFound {
                 status::NOT_FOUND
             } else {
