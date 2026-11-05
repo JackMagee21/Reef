@@ -48,6 +48,19 @@ pub fn var_key(name: &str) -> String {
 /// Where `cd` with no argument goes, first one set wins.
 pub const HOME_VARS: &[&str] = &["HOME"];
 
+/// Who's logged in, for the prompt (`jmt@link`); first one set wins.
+pub const USER_VARS: &[&str] = &["USER", "LOGNAME"];
+
+/// The machine's name, for the prompt (`jmt@link`).
+// shortcut: Linux only (/proc); macOS falls back to `$HOSTNAME`, then `localhost`
+pub fn host_name(sh: &Shell) -> String {
+    std::fs::read_to_string("/proc/sys/kernel/hostname")
+        .ok()
+        .map(|h| h.trim().to_string())
+        .or_else(|| sh.var("HOSTNAME").map(str::to_string))
+        .unwrap_or_else(|| "localhost".into())
+}
+
 /// Unix paths from `canonicalize` are already clean.
 pub fn clean_path(path: PathBuf) -> PathBuf {
     path

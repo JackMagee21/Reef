@@ -74,6 +74,14 @@ pub fn var_key(name: &str) -> String {
 /// Where `cd` with no argument goes, first one set wins. `HOME` is usually unset on Windows.
 pub const HOME_VARS: &[&str] = &["HOME", "USERPROFILE"];
 
+/// Who's logged in, for the prompt (`jmt@link`); first one set wins.
+pub const USER_VARS: &[&str] = &["USERNAME"];
+
+/// The machine's name, for the prompt (`jmt@link`).
+pub fn host_name(sh: &Shell) -> String {
+    sh.var("COMPUTERNAME").unwrap_or("localhost").to_string()
+}
+
 /// Drop the `\\?\` prefix `canonicalize` adds, so users see `C:\dir`, not `\\?\C:\dir`.
 // ponytail: plain string strip; paths over 260 chars may need the prefix kept, revisit if anyone hits it
 pub fn clean_path(path: PathBuf) -> PathBuf {

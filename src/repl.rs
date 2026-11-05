@@ -1,9 +1,12 @@
 //! Running Reef with no `-c`: an interactive prompt, or commands read from piped stdin.
 
+use std::borrow::Cow;
 use std::io::{ErrorKind, IsTerminal, Read};
+use std::path::{MAIN_SEPARATOR, Path};
 
 use reedline::{
-    DefaultPrompt, DefaultPromptSegment, Reedline, Signal, ValidationResult, Validator,
+    Color, Prompt, PromptEditMode, PromptHistorySearch, Reedline, Signal, ValidationResult,
+    Validator,
 };
 
 use crate::exec;
@@ -55,14 +58,18 @@ pub fn start(sh: &mut Shell, io: &mut Io) -> i32 {
 // shortcut: no history file or completion yet; those come with the editor work
 fn interactive(sh: &mut Shell, io: &mut Io) -> i32 {
     let mut editor = Reedline::create().with_validator(Box::new(Continue));
-    let prompt = DefaultPrompt::new(
-        DefaultPromptSegment::Basic("reef".into()),
-        DefaultPromptSegment::Empty,
-    );
+
+    let banner = Color::Cyan
+        .bold()
+        .paint(format!("reef {}", env!("CARGO_PKG_VERSION")));
+    if let Err(e) = io.write_out(format!("{banner}\n").as_bytes()) {
+        eprintln!("reef: {e}");
+    }
 
     sh.interactive = true;
     loop {
-        match editor.read_line(&prompt) {
+        // Rebuilt every time: `cd` changes the directory it shows
+        match editor.read_line(&UnixPrompt::new(sh)) {
             Ok(signal) => {
                 if let Some(status) = on_signal(signal, sh, io) {
                     return status;
@@ -73,6 +80,77 @@ fn interactive(sh: &mut Shell, io: &mut Io) -> i32 {
                 return 1;
             }
         }
+    }
+}
+
+/// `jmt@link:~/src$ `, colored like Debian and Ubuntu's bash prompt.
+/// `#` instead of `$` for root.
+struct UnixPrompt {
+    /// `user@host:dir`, with color codes
+    left: String,
+    indicator: &'static str,
+}
+
+impl UnixPrompt {
+    fn new(sh: &Shell) -> Self {
+        let user = platform::USER_VARS
+            .iter()
+            .find_map(|v| sh.var(v))
+            .unwrap_or("user");
+        let home = platform::HOME_VARS.iter().find_map(|v| sh.var(v));
+        let user_host = format!("{user}@{}", platform::host_name(sh));
+        UnixPrompt {
+            left: format!(
+                "{}:{}",
+                Color::Green.bold().paint(user_host),
+                Color::Blue.bold().paint(tilde(sh.cwd(), home))
+            ),
+            indicator: if user == "root" { "# " } else { "$ " },
+        }
+    }
+}
+
+/// `cwd` with the home directory written as `~`, like bash's `\w`.
+fn tilde(cwd: &Path, home: Option<&str>) -> String {
+    match home
+        .filter(|h| !h.is_empty())
+        .and_then(|h| cwd.strip_prefix(h).ok())
+    {
+        Some(rest) if rest.as_os_str().is_empty() => "~".into(),
+        Some(rest) => format!("~{MAIN_SEPARATOR}{}", rest.display()),
+        None => cwd.display().to_string(),
+    }
+}
+
+impl Prompt for UnixPrompt {
+    fn render_prompt_left(&self) -> Cow<'_, str> {
+        Cow::Borrowed(&self.left)
+    }
+
+    fn render_prompt_right(&self) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
+
+    fn render_prompt_indicator(&self, _mode: PromptEditMode) -> Cow<'_, str> {
+        Cow::Borrowed(self.indicator)
+    }
+
+    /// The `> ` bash shows when a command continues on the next line
+    fn render_prompt_multiline_indicator(&self) -> Cow<'_, str> {
+        Cow::Borrowed("> ")
+    }
+
+    fn render_prompt_history_search_indicator(&self, _search: PromptHistorySearch) -> Cow<'_, str> {
+        Cow::Borrowed("(search) ")
+    }
+
+    /// The `$ ` and `> ` in the terminal's normal color, like bash
+    fn get_indicator_color(&self) -> Color {
+        Color::Default
+    }
+
+    fn get_prompt_multiline_color(&self) -> Color {
+        Color::Default
     }
 }
 
@@ -205,6 +283,53 @@ mod tests {
         assert!(!incomplete("echo a"));
         assert!(!incomplete("echo a && echo b"));
         assert!(!incomplete("echo )"));
+    }
+
+    #[test]
+    fn the_prompt_shows_home_as_a_tilde() {
+        let home = Some("/home/jmt");
+        assert_eq!(tilde(Path::new("/home/jmt"), home), "~");
+        assert_eq!(
+            tilde(&Path::new("/home/jmt").join("src").join("reef"), home),
+            format!("~{MAIN_SEPARATOR}src{MAIN_SEPARATOR}reef")
+        );
+        // only whole folder names: /home/jmtx isn't inside /home/jmt
+        assert_eq!(tilde(Path::new("/home/jmtx"), home), "/home/jmtx");
+        assert_eq!(tilde(Path::new("/tmp"), home), "/tmp");
+        assert_eq!(tilde(Path::new("/tmp"), None), "/tmp");
+        assert_eq!(tilde(Path::new("/tmp"), Some("")), "/tmp");
+    }
+
+    #[test]
+    fn the_prompt_is_user_at_host_colon_dir() {
+        let mut sh = Shell::new();
+        for v in platform::USER_VARS {
+            sh.set_var(v, "jmt".into(), false);
+        }
+        let p = UnixPrompt::new(&sh);
+        let plain = String::from_utf8(strip_ansi(p.left.as_bytes())).unwrap();
+        assert!(plain.starts_with("jmt@"), "{plain}");
+        assert!(plain.contains(':'), "{plain}");
+        assert_eq!(p.indicator, "$ ");
+        for v in platform::USER_VARS {
+            sh.set_var(v, "root".into(), false);
+        }
+        assert_eq!(UnixPrompt::new(&sh).indicator, "# ");
+    }
+
+    /// The prompt without its color codes (`ESC [ ... m`).
+    fn strip_ansi(bytes: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut in_code = false;
+        for &b in bytes {
+            match (in_code, b) {
+                (false, 0x1b) => in_code = true,
+                (true, b'm') => in_code = false,
+                (true, _) => {}
+                (false, b) => out.push(b),
+            }
+        }
+        out
     }
 
     #[test]
