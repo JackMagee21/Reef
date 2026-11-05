@@ -33,7 +33,7 @@ Rebuilds the newest commit from GitHub and replaces the installed `reef`, wherev
 
 ## Use it as your terminal's shell
 
-Point your terminal at Reef rather than changing your login shell: Reef can't run scripts or pipes yet, and other programs (ssh, editors, IDE terminals) run commands through your login shell.
+Point your terminal at Reef rather than changing your login shell: Reef can't run script files yet, and other programs (ssh, editors, IDE terminals) run commands through your login shell.
 
 - **GNOME Terminal / Ptyxis:** Preferences → Profiles → add a profile → *Use a custom command* → `reef` (or the full path, e.g. `/home/you/.local/bin/reef`).
 - **Windows Terminal:** Settings → *Add a new profile* → Command line: `reef.exe`.
@@ -44,6 +44,7 @@ Point your terminal at Reef rather than changing your login shell: Reef can't ru
 - Commands and programs on `PATH` (with `PATHEXT` on Windows)
 - Quoting: `'...'`, `"..."`, `\`
 - Variables: `x=1`, `$x`, `${x}`, `$?`, `VAR=value program`, with field splitting like `sh`
+- Pipes: `ls | grep x | wc -l`
 - `;`, `&&`, `||`, `!`, `{ ...; }` groups and `( ... )` subshells
 - Redirects: `>`, `>>`, `<`, `<>`, `>|`, `2>&1`, `2>/dev/null` (also on Windows)
 - Builtins: `cd`, `echo`, `exit`, `export`, `false`, `pwd`, `true`, `type`, `unset`
@@ -53,7 +54,7 @@ Point your terminal at Reef rather than changing your login shell: Reef can't ru
 
 ## Not yet
 
-Pipes (`|`), background jobs (`&`), globs (`*.txt`), `~`, `$(...)`, heredocs, `if`/`for`/`while`/`case`, functions, running script files, tab completion. Anything not supported says so (`reef: not supported yet: ...`) instead of doing the wrong thing.
+Background jobs (`&`), globs (`*.txt`), `~`, `$(...)`, heredocs, `if`/`for`/`while`/`case`, functions, running script files, tab completion. Anything not supported says so (`reef: not supported yet: ...`) instead of doing the wrong thing.
 
 ## More
 

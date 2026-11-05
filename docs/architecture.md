@@ -27,7 +27,7 @@ lexer::lex()            src/lexer/mod.rs    text → tokens (words + operators, 
 parser::parse()         src/parser/mod.rs   tokens → tree (List, AndOr, Pipeline, Command)
       │                                      unfinished → more lines; wrong → syntax error, 2
       ▼
-check_supported()       src/exec/mod.rs     pipes, `&`, heredocs, `${x:-y}` → "not supported yet"
+check_supported()       src/exec/mod.rs     `&`, heredocs, `${x:-y}` → "not supported yet"
       │                                      (checked before anything runs)
       ▼
 exec::list()            src/exec/mod.rs     walk the tree: `;` `&&` `||` `!` `{ }` `( )`,
@@ -81,7 +81,7 @@ Every command gets the same `&mut Shell`. That's how `cd` changes the directory 
 
 More fields (functions, aliases, positional arguments, options) are **planned** and get added when a feature needs them.
 
-`Shell` is `Clone`. Subshells `( ... )` run on a copy, which is Reef's replacement for `fork`; pipeline stages (**planned**) will too.
+`Shell` is `Clone`. Subshells `( ... )` and each command in a pipeline run on a copy, which is Reef's replacement for `fork`. Pipeline commands also run on their own threads (`exec::piped`), so they all run at once.
 
 ## How a command is found
 
@@ -105,4 +105,4 @@ External programs start with `Shell::cwd` as their directory, the exported varia
 
 ## Planned, in order
 
-Pipelines → the rest of expansion (`~`, globs, `$(...)`) → control flow and functions → editor features (completion, highlighting). History and suggestions already work (`repl.rs`).
+The rest of expansion (`~`, globs, `$(...)`) → control flow and functions → editor features (completion, highlighting). History and suggestions already work (`repl.rs`).

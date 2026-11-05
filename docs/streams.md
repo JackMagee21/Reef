@@ -6,7 +6,7 @@
 
 Builtins write with `io.write_out(...)` and `io.write_err(...)`, never `println!` or `eprintln!`.
 
-That way, redirects only swap which stream `Io` holds: `echo hi > file` works without `echo` knowing files exist (see [redirects.md](redirects.md)). Pipes (**planned**) will work the same way. RShell printed directly and then needed a special case just for `echo > file`, while redirects on every other builtin were silently ignored.
+That way, redirects only swap which stream `Io` holds: `echo hi > file` works without `echo` knowing files exist (see [redirects.md](redirects.md)). Pipes work the same way: in `echo hi | wc`, `echo`'s stdout is simply a `PipeOut`. RShell printed directly and then needed a special case just for `echo > file`, while redirects on every other builtin were silently ignored.
 
 ## Stream
 
@@ -17,7 +17,7 @@ A `Stream` is one of a fixed set of places, not "anything writable". The reason:
 | `Stdin`, `Stdout`, `Stderr` | Reef's own three console streams | built |
 | `File` | an open file, from `> out.txt`, `>> log`, `< in.txt`. `/dev/null` is a `File` too: the OS's null device | built |
 | `Memory` | bytes in memory, for builtin tests and `$(...)` | planned |
-| `PipeIn` / `PipeOut` | the two ends of a pipe between commands | planned |
+| `PipeIn` / `PipeOut` | the two ends of a pipe between commands, from `std::io::pipe()` | built |
 
 Reef's own stdout and stderr are separate kinds, not one "terminal" kind. With `2>&1`, stderr becomes a copy of stdout. If both were just "the terminal", the copy couldn't know it should follow stdout when Reef's own output is redirected.
 

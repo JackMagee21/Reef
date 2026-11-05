@@ -63,7 +63,8 @@ Syntax errors point at the token: `unexpected `)` (column 8)`, or `(line 2, colu
 | `! a` | 0 becomes 1, anything else becomes 0 |
 | `{ a; b; }` | in this shell: a `cd` inside changes the directory afterwards |
 | `( a; b )` | in a **copy** of the shell (`Shell::clone`): `cd`, variables and `exit` inside don't leak out. This is Reef's replacement for `fork` |
-| `exit` | stops the rest of the line too: `exit 4; echo no` prints nothing |
+| `a \| b \| c` | all at once, each one's stdout piped into the next one's stdin. Each runs in a **copy** of the shell on its own thread, like `( )`, so `x=1 \| true` doesn't set `x`. The status is the last command's |
+| `exit` | stops the rest of the line too: `exit 4; echo no` prints nothing. Inside a pipeline it only ends that command |
 | a blank line or a comment | runs nothing and keeps `$?` |
 
 `exit` with no number uses the status of the command just before it, even inside a chain: `false; exit` exits with 1.
@@ -74,7 +75,6 @@ These parse fully, but each needs new kinds of `Io` stream before it can run, so
 
 | Input | Message |
 |---|---|
-| `a \| b` | `not supported yet: pipelines (`\|`)` |
 | `sleep 1 &` | `not supported yet: background jobs (`&`)` |
 
 Redirects run; [redirects.md](redirects.md) covers them, including the few forms (heredocs, `3>`, `>&-`) that are still an error.
@@ -83,7 +83,7 @@ They're checked for the **whole input before anything runs**, so `echo first; ec
 
 ## Not done yet (planned)
 
-- **Running pipes and `&`**: new `Stream` kinds in `streams.rs` (see [streams.md](streams.md)).
+- **Running `&`**: background jobs need job control.
 - **Control flow**: `if`, `while`, `until`, `for`, `case`, and functions.
 - **Heredoc bodies**: `<<` parses, but the lines after it aren't read yet.
 - **Assignments before a builtin**: `x=1 cd`. Assignments on their own and before programs work (see [expansion.md](expansion.md)); they're spotted when the command runs, not by the parser.
