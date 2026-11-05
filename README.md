@@ -15,7 +15,7 @@ cargo install --git https://github.com/JackMagee21/Reef --root ~/.local
 On Windows, leave out `--root ~/.local`; it then goes in `%USERPROFILE%\.cargo\bin`, which the Rust installer adds to `PATH`.
 
 ```sh
-reef                      # interactive prompt
+reef                      # interactive prompt: jmt@link:~$
 reef -c 'echo hello'      # run one command
 echo 'echo hi' | reef     # run commands from stdin
 reef --version
@@ -48,10 +48,12 @@ Point your terminal at Reef rather than changing your login shell: Reef can't ru
 - Redirects: `>`, `>>`, `<`, `<>`, `>|`, `2>&1`, `2>/dev/null` (also on Windows)
 - Builtins: `cd`, `echo`, `exit`, `export`, `false`, `pwd`, `true`, `type`, `unset`
 - Lines ending in `\`, `&&` or an open quote continue on the next line
+- History: ↑/↓ go through earlier commands, saved between sessions in `~/.local/share/reef/history` (`%APPDATA%\reef\history` on Windows)
+- Suggestions: as you type, a faded match from your history appears; → accepts it
 
 ## Not yet
 
-Pipes (`|`), background jobs (`&`), globs (`*.txt`), `~`, `$(...)`, heredocs, `if`/`for`/`while`/`case`, functions, running script files, history and tab completion. Anything not supported says so (`reef: not supported yet: ...`) instead of doing the wrong thing.
+Pipes (`|`), background jobs (`&`), globs (`*.txt`), `~`, `$(...)`, heredocs, `if`/`for`/`while`/`case`, functions, running script files, tab completion. Anything not supported says so (`reef: not supported yet: ...`) instead of doing the wrong thing.
 
 ## More
 

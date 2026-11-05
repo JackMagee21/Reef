@@ -105,4 +105,4 @@ External programs start with `Shell::cwd` as their directory, the exported varia
 
 ## Planned, in order
 
-Pipelines → the rest of expansion (`~`, globs, `$(...)`) → control flow and functions → editor features (history file, completion, highlighting).
+Pipelines → the rest of expansion (`~`, globs, `$(...)`) → control flow and functions → editor features (completion, highlighting). History and suggestions already work (`repl.rs`).
