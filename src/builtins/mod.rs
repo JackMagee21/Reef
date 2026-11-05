@@ -1,12 +1,12 @@
 mod cd;
 mod echo;
 mod exit;
+mod export;
 mod false_cmd;
 mod pwd;
 mod true_cmd;
 mod type_cmd;
 mod unset;
-mod export;
 
 use crate::shell::Shell;
 use crate::streams::Io;
@@ -17,12 +17,12 @@ const BUILTINS: &[(&str, Builtin)] = &[
     ("cd", cd::cd),
     ("echo", echo::echo),
     ("exit", exit::exit),
+    ("export", export::export_cmd),
     ("false", false_cmd::false_cmd),
     ("pwd", pwd::pwd),
     ("true", true_cmd::true_cmd),
     ("type", type_cmd::type_cmd),
     ("unset", unset::unset),
-    ("export", export::export_cmd),
 ];
 
 pub fn lookup(name: &str) -> Option<Builtin> {
