@@ -31,6 +31,7 @@ Rust's standard library already hides most OS differences (files, processes, env
 | `find_command(name, sh)` | tries each extension in the shell's `PATHEXT` (`.exe`, `.cmd`, `.bat`...); a name typed with its extension is used as-is | the file must have an executable bit |
 | | a name containing `/` or `\` is looked up relative to `cwd`, not `PATH`. Relative `PATH` entries are relative to `cwd` | a name containing `/` is looked up relative to `cwd` and used if it exists (so a file without the execute bit gives 126, not 127). Empty and relative `PATH` entries mean `cwd`. With `PATH` unset, `/usr/local/bin:/usr/bin:/bin` is searched, never `cwd` |
 | `exit_status(status)` | always 0-255. Crash codes become 128 + the matching Unix signal (Ctrl-C `0xC000013A` → 130, access violation `0xC0000005` → 139); other codes keep their low 8 bits (`300` → 44), and a failure never becomes 0 | killed by signal N becomes 128 + N |
+| `NAMES_IGNORE_CASE` (a constant) | `true`: globs ignore case (`*.TXT` finds `a.txt`) | `false` |
 | `var_key(name)` | uppercases: `Path` and `PATH` are one variable | unchanged: names are case-sensitive |
 | `USER_VARS` (a constant) | `USERNAME`: the user shown in the prompt | `USER`, then `LOGNAME` |
 | `host_name(sh)` | `$COMPUTERNAME`, for the prompt | `/proc/sys/kernel/hostname`, else `$HOSTNAME`, else `localhost` |

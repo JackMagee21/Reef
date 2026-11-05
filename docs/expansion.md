@@ -2,6 +2,14 @@
 
 `src/expand.rs` turns a `Word` into the strings a command gets. The lexer has already split `$x`, `${x}` and `$?` out as `WordPart::Param`, each remembering whether it was quoted.
 
+The steps, in order: `~` → `$x` → field splitting → globs. Quoted text skips splitting and globs.
+
+## `~`
+
+`~` alone or `~/...` at the start of a word becomes the home directory (`$HOME`; on Windows `$USERPROFILE` if `HOME` is unset). It counts as quoted, so a home with spaces or `*` in it is never split or globbed. It also works after `=` in an assignment: `x=~/bin`, `export PATH=~/bin`.
+
+`'~'`, `"~"`, `\~`, `a~` and `~x` are left alone. `~user` (another user's home) is **planned**.
+
 ## What expands
 
 | Form | Value |
@@ -29,7 +37,28 @@ An **unquoted** `$x` is split into separate arguments on spaces, tabs and newlin
 
 `$IFS` is ignored for now; splitting always uses space, tab and newline.
 
-Redirect targets and assignment values are expanded but **never split**: `f='my file'; echo hi > $f` writes to `my file`.
+Redirect targets and assignment values are expanded but **never split or globbed**: `f='my file'; echo hi > $f` writes to `my file`, and `x=*` sets `x` to `*`.
+
+## Globs
+
+After splitting, a field with an **unquoted** `*`, `?` or `[` is a pattern, matched against file names (`src/glob.rs`):
+
+| Pattern | Matches |
+|---|---|
+| `*` | any run of characters, even none |
+| `?` | any one character |
+| `[abc]`, `[a-z]` | one character from the set |
+| `[!abc]`, `[^abc]` | one character not in it |
+| `\*`, `'*'`, `"*"` | a literal `*` |
+
+- Each `/`-separated piece is matched separately, so `*/*.rs` looks one folder down, and `*` never matches a `/`.
+- Names starting with `.` only match a pattern that starts with `.`: `*` skips `.git`, `.*` finds it (but never `.` or `..`).
+- A pattern ending in `/` matches only folders: `*/`.
+- Matches are sorted. **No match keeps the word as typed**, like `sh`: `ls *.none` passes `*.none` to `ls`, which reports it missing.
+- An unquoted `$x` is globbed too: with `x='*.txt'`, `echo $x` lists the files and `echo "$x"` prints `*.txt`.
+- On Windows matching ignores case (`*.TXT` finds `a.txt`), like the rest of Windows.
+
+`[[:alpha:]]` classes and names that aren't valid UTF-8 are **planned**.
 
 ## Assignments
 
@@ -47,4 +76,4 @@ Variables live in `Shell` (see [architecture.md](architecture.md)). Subshells `(
 
 ## Planned
 
-`~`, globs (`*`, `?`, `[...]`), `$(...)`, `$((...))`, the `${...}` operators, positional arguments, and `$IFS`.
+`~user`, `[[:class:]]` in globs, `$(...)`, `$((...))`, the `${...}` operators, positional arguments, and `$IFS`.

@@ -45,6 +45,7 @@ Point your terminal at Reef rather than changing your login shell: Reef can't ru
 - Quoting: `'...'`, `"..."`, `\`
 - Variables: `x=1`, `$x`, `${x}`, `$?`, `VAR=value program`, with field splitting like `sh`
 - Pipes: `ls | grep x | wc -l`
+- `~` and globs: `cd ~/src`, `ls *.rs`, `rm src/*/*.tmp`, `[a-z]`, `?`
 - `;`, `&&`, `||`, `!`, `{ ...; }` groups and `( ... )` subshells
 - Redirects: `>`, `>>`, `<`, `<>`, `>|`, `2>&1`, `2>/dev/null` (also on Windows)
 - Builtins: `cd`, `echo`, `exit`, `export`, `false`, `pwd`, `true`, `type`, `unset`
@@ -54,7 +55,7 @@ Point your terminal at Reef rather than changing your login shell: Reef can't ru
 
 ## Not yet
 
-Background jobs (`&`), globs (`*.txt`), `~`, `$(...)`, heredocs, `if`/`for`/`while`/`case`, functions, running script files, tab completion. Anything not supported says so (`reef: not supported yet: ...`) instead of doing the wrong thing.
+Background jobs (`&`), `$(...)`, heredocs, `if`/`for`/`while`/`case`, functions, running script files, tab completion. Anything not supported says so (`reef: not supported yet: ...`) instead of doing the wrong thing.
 
 ## More
 

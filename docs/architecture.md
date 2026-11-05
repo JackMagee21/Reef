@@ -34,7 +34,7 @@ exec::list()            src/exec/mod.rs     walk the tree: `;` `&&` `||` `!` `{ 
       │                                      each command's redirects (exec/redirect.rs)
       │
       ▼  each simple command
-expand::fields()        src/expand.rs       `x=1` assignments, then $x / $? → argument strings
+expand::fields()        src/expand.rs       `x=1` assignments, then ~, $x, splitting, globs → argument strings
       │
       ├── builtin?      src/builtins/       call it with (Shell, args, Io)
       │
@@ -60,7 +60,8 @@ exit status (i32)  →  Shell::last_status  ($?)
 | `repl.rs` | the prompt loop (reedline) and piped-stdin mode | no |
 | `shell.rs` | `Shell`: state that survives between commands | no |
 | `word.rs` | `Word` and `WordPart`: one argument before expansion, and spotting `name=value` | no |
-| `expand.rs` | expanding `$x` and `$?` in a `Word`, and field splitting | no |
+| `expand.rs` | expanding `~`, `$x` and `$?` in a `Word`, field splitting, and handing patterns to `glob.rs` | no |
+| `glob.rs` | matching `*`, `?`, `[a-z]` against file names | no (case rules come from `platform/`) |
 | `lexer/mod.rs` | `lex()`: text into tokens, following POSIX quoting | no |
 | `lexer/token.rs` | `Token`, `TokenKind`, `Op`, `Span` | no |
 | `builtins/` | commands Reef runs itself, and the one table of them | no |
@@ -105,4 +106,4 @@ External programs start with `Shell::cwd` as their directory, the exported varia
 
 ## Planned, in order
 
-The rest of expansion (`~`, globs, `$(...)`) → control flow and functions → editor features (completion, highlighting). History and suggestions already work (`repl.rs`).
+The rest of expansion (`$(...)`) → control flow and functions → editor features (completion, highlighting). History and suggestions already work (`repl.rs`).
