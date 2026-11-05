@@ -12,7 +12,7 @@ use crate::streams::Io;
 pub fn exit(sh: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
     let code = match argv.get(1) {
         None => sh.last_status,
-        Some(arg) => match arg.parse::<i64>() {
+        Some(arg) => match arg.trim().parse::<i64>() {
             // A bad number still exits, like bash
             Err(_) => {
                 io.error(format_args!("exit: {arg}: numeric argument required"));
