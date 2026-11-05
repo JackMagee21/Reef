@@ -80,6 +80,7 @@ const CASES: &[(&str, &str, i32)] = &[
     ("exit -1", "", 255),
     ("exit abc", "", 2),
     ("exit 1 2", "", 1),
+    ("exit ' 5 '", "", 5),
     // cd errors (cd + pwd together need piped stdin, see below)
     ("cd nosuchdir_reef_test", "", 1),
     ("cd a b", "", 1),
@@ -151,6 +152,14 @@ const CASES: &[(&str, &str, i32)] = &[
     ("unset FOO && echo ok", "ok\n", 0),
     ("unset FOO", "", 0),
     ("unset PATH; type echo", "echo is a shell builtin\n", 0),
+    ("unset -v FOO && echo ok", "ok\n", 0),
+    ("unset a-b || echo failed", "failed\n", 0),
+    // export: a bad name fails the whole command, but the good ones are still exported
+    ("export REEF_A=1 && echo ok", "ok\n", 0),
+    ("export 1bad=x || echo failed", "failed\n", 0),
+    ("export =x || echo failed", "failed\n", 0),
+    ("export REEF_A", "", 0),
+    ("export REEF_A=x=y; export -p > /dev/null", "", 0),
 ];
 
 #[test]
@@ -317,6 +326,19 @@ const ERRORS: &[(&str, &str, i32)] = &[
         "reef: syntax error: unexpected end of input: `(` is missing its `)`\n",
         2,
     ),
+    (
+        "export 1bad=x REEF_OK=1 a-b",
+        "reef: export: `1bad=x': not a valid identifier\n\
+         reef: export: `a-b': not a valid identifier\n",
+        1,
+    ),
+    ("unset -f", "reef: unset: `-f': not a valid identifier\n", 1),
+    // Too big for a file descriptor: refused, not run as `echo 99999999999 > x`
+    (
+        "echo 99999999999>x",
+        "reef: not supported yet: file descriptors above 2 (`4294967295>x`)\n",
+        2,
+    ),
     // An error stops the whole -c line before anything runs
     (
         "echo first; echo a | b",
@@ -439,6 +461,126 @@ fn non_utf8_environment_does_not_crash() {
         .assert()
         .success()
         .stdout("ok\n");
+}
+
+#[test]
+fn invalid_utf8_on_piped_stdin_does_not_stop_the_script() {
+    piped(&b"echo \xff\necho after\n"[..])
+        .success()
+        .stdout("\u{FFFD}\nafter\n");
+}
+
+#[test]
+fn export_lists_exported_variables_sorted_and_quoted() {
+    let out = reef()
+        .env("REEF_Z", "z")
+        .env("REEF_Q", "it's")
+        .args(["-c", "export REEF_A='a b'; export"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let mine: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.starts_with("export REEF_"))
+        .collect();
+    assert_eq!(
+        mine,
+        [
+            "export REEF_A='a b'",
+            r"export REEF_Q='it'\''s'",
+            "export REEF_Z='z'"
+        ]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn export_reaches_child_processes_and_bad_names_do_not() {
+    let out = reef()
+        .args(["-c", "export REEF_X=hi =bad 1bad=y; env"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.lines().any(|l| l == "REEF_X=hi"), "{stdout}");
+    assert!(
+        !stdout
+            .lines()
+            .any(|l| l.starts_with('=') || l.starts_with("1bad=")),
+        "{stdout}"
+    );
+}
+
+/// An executable script `name` in `dir` that prints `hello`.
+#[cfg(unix)]
+fn hello_script(dir: &Path, name: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    let script = dir.join(name);
+    std::fs::write(&script, "#!/bin/sh\necho hello\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn unset_path_never_searches_the_current_dir() {
+    let dir = temp_dir("reef_unset_path");
+    hello_script(&dir, "reef_hello");
+    reef_in(&dir, "unset PATH; reef_hello")
+        .code(127)
+        .stdout("")
+        .stderr("reef: reef_hello: command not found\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn cd_into_a_dir_without_search_permission_fails() {
+    use std::os::unix::fs::PermissionsExt;
+    // root can enter anything, so there's nothing to check
+    if is_root() {
+        return;
+    }
+    let dir = temp_dir("reef_cd_locked");
+    let locked = dir.join("locked");
+    std::fs::create_dir(&locked).unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let result = reef_in(&dir, "cd locked; pwd").get_output().clone();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&result.stderr),
+        "reef: cd: locked: Permission denied\n"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&result.stdout).trim_end(),
+        dir.canonicalize().unwrap().display().to_string()
+    );
+}
+
+#[cfg(unix)]
+fn is_root() -> bool {
+    std::process::Command::new("id")
+        .arg("-u")
+        .output()
+        .is_ok_and(|o| o.stdout == b"0\n")
+}
+
+#[cfg(unix)]
+#[test]
+fn a_deleted_current_dir_is_not_command_not_found() {
+    let dir = temp_dir("reef_deleted_cwd");
+    hello_script(&dir, "reef_hello");
+    std::fs::create_dir(dir.join("sub")).unwrap();
+    let dir = dir.canonicalize().unwrap();
+    let script = dir.join("reef_hello");
+    reef_in(
+        &dir,
+        &format!("cd sub && rmdir ../sub && {}", script.display()),
+    )
+    .code(126)
+    .stderr(format!(
+        "reef: {}: current directory {} no longer exists\n",
+        script.display(),
+        dir.join("sub").display()
+    ));
 }
 
 #[test]

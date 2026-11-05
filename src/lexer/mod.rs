@@ -196,11 +196,13 @@ fn read_op(c: char, chars: &mut Peekable<CharIndices>) -> Op {
 }
 
 /// `2` in `2>file`: one unquoted part, all ASCII digits. `'2'>file` and `a2>file` are words.
+/// Too big for a `u32` is still an io number (saturated), so it gets refused
+/// instead of silently becoming an argument to the command.
 fn io_number(w: &Word) -> Option<u32> {
-    w.as_unquoted()
-        .filter(|t| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit()))?
-        .parse()
-        .ok()
+    let digits = w
+        .as_unquoted()
+        .filter(|t| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit()))?;
+    Some(digits.parse().unwrap_or(u32::MAX))
 }
 
 #[cfg(test)]
@@ -390,6 +392,10 @@ mod tests {
         assert_eq!(kinds("2>x"), [K::N(2), K::O(Great), w("x")]);
         assert_eq!(kinds("2>&1"), [K::N(2), K::O(GreatAnd), w("1")]);
         assert_eq!(kinds("10<x"), [K::N(10), K::O(Less), w("x")]);
+        assert_eq!(
+            kinds("99999999999>x"),
+            [K::N(u32::MAX), K::O(Great), w("x")]
+        );
         // not io numbers: a space, quotes, letters, or not a redirect
         assert_eq!(kinds("2 >x"), [w("2"), K::O(Great), w("x")]);
         assert_eq!(kinds("'2'>x"), [w("2"), K::O(Great), w("x")]);
