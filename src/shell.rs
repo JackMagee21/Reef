@@ -93,3 +93,29 @@ impl Shell {
         self.vars.remove(&platform::var_key(name));
     }
 }
+
+/// A name `export` and `unset` accept: a letter or `_`, then letters, digits
+/// and `_` (POSIX). Variables imported from the environment aren't checked,
+/// so Windows names like `ProgramFiles(x86)` still reach child processes.
+pub fn is_valid_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn valid_names() {
+        for good in ["A", "_", "foo_1", "_x9", "Path"] {
+            assert!(is_valid_name(good), "{good:?}");
+        }
+        for bad in ["", "1a", "a-b", "a b", "-v", "a=b", "é"] {
+            assert!(!is_valid_name(bad), "{bad:?}");
+        }
+    }
+}
