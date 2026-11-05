@@ -185,6 +185,17 @@ const CASES: &[(&str, &str, i32)] = &[
         "reef_echo_argreef_echo_arg\n",
         0,
     ),
+    // pipes: the last command's status counts; `!` flips it
+    ("echo a | echo b", "b\n", 0),
+    ("false | true", "", 0),
+    ("true | false", "", 1),
+    ("! true | false", "", 0),
+    ("{ echo a; echo b; } | echo c", "c\n", 0),
+    ("echo a |\n echo b", "b\n", 0),
+    // every command in a pipeline runs in a copy of the shell, like `( )`
+    ("x=1; echo a | x=2; echo $x", "1\n", 0),
+    ("exit 3 | echo after", "after\n", 0),
+    ("echo a | exit 4; echo $?", "4\n", 0),
 ];
 
 #[test]
@@ -260,11 +271,6 @@ const ERRORS: &[(&str, &str, i32)] = &[
     // the error goes through Reef's streams, so `2>` can redirect it
     ("type nosuch_reef_test 2>/dev/null", "", 1),
     // Parsed, but running them needs new Io streams (change these when they land)
-    (
-        "echo é | x",
-        "reef: not supported yet: pipelines (`|`)\n",
-        2,
-    ),
     (
         "cat <<EOF",
         "reef: not supported yet: heredocs (`<<EOF`)\n",
@@ -383,9 +389,16 @@ const ERRORS: &[(&str, &str, i32)] = &[
     ),
     // An error stops the whole -c line before anything runs
     (
-        "echo first; echo a | b",
-        "reef: not supported yet: pipelines (`|`)\n",
+        "echo first; echo a &",
+        "reef: not supported yet: background jobs (`&`)\n",
         2,
+    ),
+    // pipes: a builtin writing into a pipe nobody reads stops quietly
+    ("echo a | true", "", 0),
+    (
+        "echo é | nosuch_reef_cmd",
+        "reef: nosuch_reef_cmd: command not found\n",
+        127,
     ),
 ];
 
@@ -548,6 +561,91 @@ fn assignments_before_a_program_only_reach_that_program() {
         .assert()
         .success()
         .stdout("hi\n[]\n[]\n[local]\n");
+}
+
+/// `src` with `REEF` replaced by the quoted path of the reef being tested, so
+/// a pipe can feed a second reef: a reader that exists on Windows and Linux.
+fn with_reef(src: &str) -> String {
+    src.replace("REEF", &format!("'{}'", env!("CARGO_BIN_EXE_reef")))
+}
+
+#[test]
+fn a_pipe_feeds_one_command_into_the_next() {
+    reef()
+        .args(["-c", &with_reef("echo 'echo from the pipe' | REEF")])
+        .assert()
+        .success()
+        .stdout("from the pipe\n");
+}
+
+#[test]
+fn pipes_chain_through_several_commands() {
+    reef()
+        .args(["-c", &with_reef("echo 'echo echo deep' | REEF | REEF")])
+        .assert()
+        .success()
+        .stdout("deep\n");
+}
+
+#[test]
+fn a_pipeline_gets_the_status_of_its_last_command() {
+    reef()
+        .args(["-c", &with_reef("echo 'exit 4' | REEF")])
+        .assert()
+        .code(4);
+}
+
+#[test]
+fn redirects_apply_inside_a_pipeline() {
+    // `2>&1` before the pipe sends the error down the pipe too
+    reef()
+        .args([
+            "-c",
+            &with_reef("nosuch_reef_cmd 2>&1 | REEF -c 'echo got it'"),
+        ])
+        .assert()
+        .success()
+        .stdout("got it\n");
+    let dir = temp_dir("reef_pipe_redirect");
+    reef_in(&dir, &with_reef("echo 'echo hi' | REEF > out")).success();
+    assert_eq!(read(&dir, "out"), "hi\n");
+}
+
+#[test]
+fn pipes_work_from_piped_stdin_too() {
+    piped(with_reef("echo 'echo inner' | REEF\necho after\n"))
+        .success()
+        .stdout("inner\nafter\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn unix_pipes_with_real_tools() {
+    for (src, want) in [
+        ("printf 'a\\nb\\n' | grep b", "b\n"),
+        ("echo hi | cat | cat", "hi\n"),
+        ("echo one two | wc -w", "2\n"),
+    ] {
+        let out = reef().args(["-c", src]).output().unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim_start(),
+            want,
+            "{src}"
+        );
+    }
+}
+
+/// The classic pipe bug: if Reef keeps a copy of a pipe end open, `yes` never
+/// learns that `head` is gone, and this never finishes.
+#[cfg(unix)]
+#[test]
+fn a_pipeline_ends_when_its_reader_stops() {
+    reef()
+        .args(["-c", "yes | head -n 2"])
+        .timeout(std::time::Duration::from_secs(10))
+        .assert()
+        .success()
+        .stdout("y\ny\n");
 }
 
 #[test]

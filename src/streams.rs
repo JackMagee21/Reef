@@ -5,11 +5,11 @@
 
 use std::fmt;
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::{self, PipeReader, PipeWriter, Write};
 use std::process::Stdio;
 
 /// Where one of a command's streams is connected.
-/// Later steps add `Memory`, `PipeIn` and `PipeOut`.
+/// Later steps add `Memory`, for `$(...)`.
 pub enum Stream {
     /// Reef's own stdin.
     Stdin,
@@ -19,6 +19,10 @@ pub enum Stream {
     Stderr,
     /// An open file, from `> out`, `>> log` or `< in`. `/dev/null` is one of these too.
     File(File),
+    /// The reading end of a pipe: `b`'s stdin in `a | b`.
+    PipeIn(PipeReader),
+    /// The writing end of a pipe: `a`'s stdout in `a | b`.
+    PipeOut(PipeWriter),
 }
 
 impl Stream {
@@ -30,6 +34,8 @@ impl Stream {
             Stream::Stdout => Stream::Stdout,
             Stream::Stderr => Stream::Stderr,
             Stream::File(f) => Stream::File(f.try_clone()?),
+            Stream::PipeIn(r) => Stream::PipeIn(r.try_clone()?),
+            Stream::PipeOut(w) => Stream::PipeOut(w.try_clone()?),
         })
     }
 
@@ -40,6 +46,8 @@ impl Stream {
             Stream::Stdout => Stdio::from(io::stdout()),
             Stream::Stderr => Stdio::from(io::stderr()),
             Stream::File(f) => Stdio::from(f),
+            Stream::PipeIn(r) => Stdio::from(r),
+            Stream::PipeOut(w) => Stdio::from(w),
         }
     }
 
@@ -48,9 +56,10 @@ impl Stream {
             Stream::Stdout => io::stdout().lock().write_all(bytes),
             Stream::Stderr => io::stderr().lock().write_all(bytes),
             Stream::File(f) => f.write_all(bytes),
-            Stream::Stdin => Err(io::Error::new(
+            Stream::PipeOut(w) => w.write_all(bytes),
+            Stream::Stdin | Stream::PipeIn(_) => Err(io::Error::new(
                 io::ErrorKind::Unsupported,
-                "cannot write to stdin",
+                "cannot write to an input",
             )),
         }
     }

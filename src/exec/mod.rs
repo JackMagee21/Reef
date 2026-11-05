@@ -12,7 +12,7 @@ use crate::parser;
 use crate::platform;
 use crate::shell::{Shell, is_valid_name};
 use crate::status;
-use crate::streams::{Io, describe_error};
+use crate::streams::{Io, Stream, describe_error};
 use crate::word::{Word, WordPart};
 
 /// Parse and run one complete input: a line from the prompt, a `-c` string,
@@ -50,9 +50,6 @@ fn check_supported(list: &List) -> Result<(), String> {
             return Err("background jobs (`&`)".into());
         }
         for p in item.and_or.pipelines() {
-            if p.commands.len() > 1 {
-                return Err("pipelines (`|`)".into());
-            }
             for c in &p.commands {
                 if let Command::Simple { words, .. } = c {
                     words.iter().try_for_each(check_word)?;
@@ -129,13 +126,68 @@ fn and_or(a: &AndOr, sh: &mut Shell, io: &mut Io) -> i32 {
 }
 
 fn pipeline(p: &Pipeline, sh: &mut Shell, io: &mut Io) -> i32 {
-    // ponytail: runs only the first command; `check_supported` rejects pipes until they exist
-    let code = command(&p.commands[0], sh, io);
+    let code = match p.commands.as_slice() {
+        // On its own, a command runs in this shell, so `cd` and `x=1` stick
+        [only] => command(only, sh, io),
+        commands => piped(commands, sh, io),
+    };
     if p.negated {
         status::negate(code)
     } else {
         code
     }
+}
+
+/// `a | b | c`: every command runs at the same time on its own thread, with
+/// a copy of the shell (like `( )`), each one's stdout piped into the next
+/// one's stdin. A thread runs a builtin itself, or starts a program and waits
+/// for it. The status is the last command's.
+///
+/// Threads instead of `fork`, which Windows doesn't have: see design/0001.
+fn piped(commands: &[Command], sh: &Shell, io: &mut Io) -> i32 {
+    // Each command's streams start as copies of the pipeline's own
+    let mut ios = match commands
+        .iter()
+        .map(|_| io.try_clone())
+        .collect::<std::io::Result<Vec<Io>>>()
+    {
+        Ok(ios) => ios,
+        Err(e) => {
+            io.error(describe_error(&e));
+            return 1;
+        }
+    };
+    for i in 1..ios.len() {
+        let (reader, writer) = match std::io::pipe() {
+            Ok(ends) => ends,
+            Err(e) => {
+                io.error(format_args!("pipe: {}", describe_error(&e)));
+                return 1;
+            }
+        };
+        ios[i - 1].stdout = Stream::PipeOut(writer);
+        ios[i].stdin = Stream::PipeIn(reader);
+    }
+    // Output already buffered for the screen comes before the pipeline's
+    if let Err(e) = io.flush() {
+        io.error(format_args!("write error: {e}"));
+    }
+
+    // Each thread owns its streams, so its pipe ends close the moment it
+    // finishes. Reef keeps none, or `yes | head` would never end.
+    std::thread::scope(|scope| {
+        let threads: Vec<_> = commands
+            .iter()
+            .zip(ios)
+            .map(|(c, mut own)| {
+                let mut copy = sh.clone();
+                scope.spawn(move || command(c, &mut copy, &mut own))
+            })
+            .collect();
+        // A thread only fails by panicking, which has already printed why
+        let codes: Vec<i32> = threads.into_iter().map(|t| t.join().unwrap_or(1)).collect();
+        codes.last().copied().unwrap_or(0)
+    })
 }
 
 /// A command with its redirects: they give it (and everything inside a `{ }`

@@ -31,9 +31,11 @@ pub fn lookup(name: &str) -> Option<Builtin> {
 
 /// Write a builtin's output. Returns the builtin's status: 0, or 1 after
 /// reporting `reef: <name>: write error: ...` if the output couldn't be written.
+/// A pipe whose reader has gone (`echo a | true`) fails quietly, like bash.
 fn print(io: &mut Io, name: &str, text: &str) -> i32 {
     match io.write_out(text.as_bytes()) {
         Ok(()) => 0,
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => 1,
         Err(e) => {
             io.error(format_args!("{name}: write error: {e}"));
             1
