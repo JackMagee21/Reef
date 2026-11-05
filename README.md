@@ -2,7 +2,7 @@
 
 The prodigal son of RShell: a POSIX-style shell written in Rust, native on Windows and Linux.
 
-**Status: 0.2, an early preview.** Good for trying out, not yet for daily use or scripts you depend on.
+**Status: 0.3, an early preview.** Good for trying out, not yet for daily use or scripts you depend on.
 
 ## Install
 
