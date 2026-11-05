@@ -27,14 +27,14 @@ lexer::lex()            src/lexer/mod.rs    text → tokens (words + operators, 
 parser::parse()         src/parser/mod.rs   tokens → tree (List, AndOr, Pipeline, Command)
       │                                      unfinished → more lines; wrong → syntax error, 2
       ▼
-check_supported()       src/exec/mod.rs     pipes, `&`, heredocs → "not supported yet"
+check_supported()       src/exec/mod.rs     pipes, `&`, heredocs, `${x:-y}` → "not supported yet"
       │                                      (checked before anything runs)
       ▼
 exec::list()            src/exec/mod.rs     walk the tree: `;` `&&` `||` `!` `{ }` `( )`,
       │                                      each command's redirects (exec/redirect.rs)
       │
       ▼  each simple command
-Word::joined_text()     src/word.rs         Words → plain strings      (until expansion)
+expand::fields()        src/expand.rs       `x=1` assignments, then $x / $? → argument strings
       │
       ├── builtin?      src/builtins/       call it with (Shell, args, Io)
       │
@@ -51,6 +51,7 @@ exit status (i32)  →  Shell::last_status  ($?)
 | File | Owns | Depends on the OS? |
 |---|---|---|
 | `main.rs` | startup and argument handling only | no |
+| `update.rs` | `reef --update`: reinstall the newest version with `cargo install`, into the same folder | no (the Windows rename is in `platform/`) |
 | `status.rs` | the exit statuses with a fixed meaning (`SYNTAX_ERROR`, `NOT_FOUND`...) and `negate` for `!` | no |
 | `parser/mod.rs` | `parse()`: tokens into a tree, with incomplete and syntax errors | no |
 | `ast.rs` | the tree types: `List`, `Item`, `AndOr`, `Pipeline`, `Command`, `Redirect` | no |
@@ -58,7 +59,8 @@ exit status (i32)  →  Shell::last_status  ($?)
 | `exec/redirect.rs` | turning a command's redirects into the `Io` it runs with | no |
 | `repl.rs` | the prompt loop (reedline) and piped-stdin mode | no |
 | `shell.rs` | `Shell`: state that survives between commands | no |
-| `word.rs` | `Word` and `WordPart`: one argument before expansion | no |
+| `word.rs` | `Word` and `WordPart`: one argument before expansion, and spotting `name=value` | no |
+| `expand.rs` | expanding `$x` and `$?` in a `Word`, and field splitting | no |
 | `lexer/mod.rs` | `lex()`: text into tokens, following POSIX quoting | no |
 | `lexer/token.rs` | `Token`, `TokenKind`, `Op`, `Span` | no |
 | `builtins/` | commands Reef runs itself, and the one table of them | no |
@@ -87,7 +89,7 @@ More fields (functions, aliases, positional arguments, options) are **planned** 
 2. Otherwise, search `PATH` with `platform::find_command`. On Windows this tries every `PATHEXT` extension (`.exe`, `.cmd`, `.bat`...). Both come from the shell's variables, not Reef's starting environment.
 3. Not found: print `reef: NAME: command not found`, status 127.
 
-External programs start with `Shell::cwd` as their directory, only the exported variables as their environment, and the `Io` streams as their stdin, stdout and stderr.
+External programs start with `Shell::cwd` as their directory, the exported variables (plus any `x=1` written before the command) as their environment, and the `Io` streams as their stdin, stdout and stderr.
 
 ## Exit statuses
 
@@ -103,4 +105,4 @@ External programs start with `Shell::cwd` as their directory, only the exported 
 
 ## Planned, in order
 
-Pipelines → expansion (`$VAR`, `~`, globs) → control flow and functions → editor features (history file, completion, highlighting).
+Pipelines → the rest of expansion (`~`, globs, `$(...)`) → control flow and functions → editor features (history file, completion, highlighting).

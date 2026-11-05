@@ -47,7 +47,7 @@ A word isn't a plain string. It's a list of parts, and each part remembers wheth
 a'b'c   →   one Word:  [ "a" (unquoted), "b" (quoted), "c" (unquoted) ]
 ```
 
-Today the parts are simply joined (`Word::joined_text`) before running the command. The flag matters later: `$HOME` and `*.rs` will expand when unquoted, but `'$HOME'` and `"*.rs"` must not. RShell turned everything into plain strings straight away, and that's why its `'$HOME'` still expanded.
+`$x`, `${x}` and `$?` are parts of their own (`WordPart::Param`), quoted inside `"..."` and unquoted outside; inside `'...'` they're plain text. The flag decides how they expand (see [expansion.md](expansion.md)): an unquoted `$x` is split into words, a quoted one isn't, and `'$HOME'` never expands. RShell turned everything into plain strings straight away, and that's why its `'$HOME'` still expanded.
 
 ## The rules
 
@@ -56,7 +56,8 @@ Today the parts are simply joined (`Word::joined_text`) before running the comma
 | space, tab | ends the current word, unless inside quotes |
 | newline, `;`, `&`, `\|`, `(`, `)`, `<`, `>` | ends the current word and starts an operator, unless quoted or escaped |
 | `'...'` | everything up to the next `'` is literal, no exceptions |
-| `"..."` | literal, except that `\` escapes `$`, `` ` ``, `"`, `\` and newline. Any other `\` stays as-is |
+| `"..."` | literal, except for `$x` forms, and `\` escaping `$`, `` ` ``, `"`, `\` and newline. Any other `\` stays as-is |
+| `$name`, `${...}`, `$?` | a `Param` part. `${` with no `}` is unfinished input. `$` before anything else is a plain character |
 | `\` outside quotes | the next character is literal. `\` then newline joins the lines |
 | `\` at the very end | stays as a literal `\`, like `bash -c 'echo \'` |
 | `#` at the start of a word | the rest of the line is a comment, up to (not including) the newline. `a;#b` is `a`, `;` and a comment |
@@ -98,7 +99,8 @@ An unclosed quote, or `\` + newline at the very end, returns `LexError::Incomple
 
 ## What the lexer doesn't do yet (planned)
 
-- **`$` forms:** `$x`, `${x}`, `$(...)`, `$((...))`. These become new kinds of `WordPart`.
+- **More `$` forms:** `$(...)`, `$((...))`, and `$1`, `$#`, `$$`, `$@`. These become new kinds of `WordPart`.
+- **Quotes inside `${...}`:** `${x:-"a}"}` ends at the first `}`. Only matters once the `${...}` operators exist.
 - **Heredoc bodies:** `<<` and `<<-` are recognized, but reading the lines after them comes with the parser.
 - **Spans in lex errors:** `LexError::Incomplete` doesn't say where the unclosed quote started yet.
 

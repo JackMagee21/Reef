@@ -7,6 +7,7 @@ Start with [architecture.md](architecture.md). It shows how a line of input trav
 | [architecture.md](architecture.md) | understand how the pieces fit together |
 | [lexer.md](lexer.md) | know exactly how Reef splits a line into words and operators, and handles quotes |
 | [parser.md](parser.md) | know the grammar, the error messages, and how `;`, `&&`, `\|\|`, `{ }` and `( )` run |
+| [expansion.md](expansion.md) | know how `$x`, `$?`, `name=value` and field splitting work |
 | [builtins.md](builtins.md) | add a new builtin command |
 | [streams.md](streams.md) | understand why builtins never print directly, and what a `Stream` can be |
 | [redirects.md](redirects.md) | know how `>`, `>>`, `<` and `2>&1` behave, and what isn't supported yet |

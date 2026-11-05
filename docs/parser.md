@@ -86,4 +86,4 @@ They're checked for the **whole input before anything runs**, so `echo first; ec
 - **Running pipes and `&`**: new `Stream` kinds in `streams.rs` (see [streams.md](streams.md)).
 - **Control flow**: `if`, `while`, `until`, `for`, `case`, and functions.
 - **Heredoc bodies**: `<<` parses, but the lines after it aren't read yet.
-- **Variable assignments**: `x=1 cmd`.
+- **Assignments before a builtin**: `x=1 cd`. Assignments on their own and before programs work (see [expansion.md](expansion.md)); they're spotted when the command runs, not by the parser.

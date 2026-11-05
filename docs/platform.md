@@ -36,6 +36,7 @@ Rust's standard library already hides most OS differences (files, processes, env
 | `resolve(cwd, target)` | `cwd.join(target)`, except that `C:` / `C:dir` use `cwd` if it's on drive C, else `C:\` (Windows would otherwise use the process's own directory, which Reef never changes) | `cwd.join(target)` |
 | `stdin_file()` | Reef's stdin as an unbuffered `File`, for piped mode | same |
 | `redirect_path(cwd, target)` | the file `> target` opens: `resolve`, except `/dev/null` and `NUL` become the null device `\\.\NUL` | `resolve` (`/dev/null` already exists) |
+| `move_aside_running_exe(exe)` | for `reef --update`: renames the running `reef.exe` to `reef.old.exe` (removing the one the last update left), because a running `.exe` can't be overwritten but can be renamed | nothing: a running program's file can be replaced |
 | `clean_path(path)` | removes the `\\?\` prefix `canonicalize` adds (`\\?\UNC\server\x` becomes `\\server\x`) | returns the path unchanged |
 
 **Planned:** console setup (UTF-8, VT mode), Ctrl-C details, case-insensitive globbing on Windows, home and config directories, and job control (`fg`/`bg` on Linux only).
