@@ -236,7 +236,9 @@ fn simple(words: &[Word], sh: &mut Shell, io: &mut Io) -> i32 {
     let argv: Vec<String> = words
         .iter()
         .flat_map(|w| match w.assignment() {
-            Some(_) if declares => vec![expand::single(w, sh)],
+            Some((name, value)) if declares => {
+                vec![format!("{name}={}", expand::single(&value, sh))]
+            }
             _ => expand::fields(w, sh),
         })
         .collect();

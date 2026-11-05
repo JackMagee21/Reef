@@ -563,6 +563,101 @@ fn assignments_before_a_program_only_reach_that_program() {
         .stdout("hi\n[]\n[]\n[local]\n");
 }
 
+/// A folder with `a.txt b.txt c.rs .hidden sub/d.txt`, for glob tests.
+fn glob_dir(name: &str) -> PathBuf {
+    let dir = temp_dir(name);
+    for file in ["a.txt", "b.txt", "c.rs", ".hidden", "sub/d.txt"] {
+        let path = dir.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "").unwrap();
+    }
+    dir
+}
+
+#[test]
+fn globs_match_file_names() {
+    let dir = glob_dir("reef_globs");
+    let mut failed = vec![];
+    for (src, want) in [
+        ("echo *.txt", "a.txt b.txt"),
+        ("echo *", "a.txt b.txt c.rs sub"),
+        ("echo ?.rs", "c.rs"),
+        ("echo [ab].txt", "a.txt b.txt"),
+        ("echo [!a].txt", "b.txt"),
+        ("echo */*.txt", "sub/d.txt"),
+        ("echo s*/", "sub/"),
+        ("echo .*", ".hidden"),
+        ("echo sub/*", "sub/d.txt"),
+        // no match: the word is kept as typed, like sh
+        ("echo *.none", "*.none"),
+        ("echo nosuch/*", "nosuch/*"),
+        // quoted or escaped, a `*` is just a character
+        ("echo '*.txt' \"*.txt\" \\*.txt", "*.txt *.txt *.txt"),
+        ("echo \"a\"*.txt", "a.txt"),
+        ("echo [", "["),
+        // an unquoted `$x` is globbed, a quoted one isn't
+        ("x='*.txt'; echo $x", "a.txt b.txt"),
+        ("x='*.txt'; echo \"$x\"", "*.txt"),
+        // `x=*` doesn't glob; `$x` later does
+        ("x=*.rs; echo \"$x\" $x", "*.rs c.rs"),
+    ] {
+        let out = reef().current_dir(&dir).args(["-c", src]).output().unwrap();
+        let got = String::from_utf8_lossy(&out.stdout);
+        if got.trim_end() != want {
+            failed.push(format!("{src:?}\n  want {want:?}\n  got  {got:?}"));
+        }
+    }
+    assert!(failed.is_empty(), "\n{}", failed.join("\n"));
+}
+
+#[test]
+fn tilde_is_the_home_directory() {
+    let mut failed = vec![];
+    for (src, want) in [
+        ("echo ~", "/h/me"),
+        ("echo ~/x ~/", "/h/me/x /h/me/"),
+        ("x=~/bin; echo $x", "/h/me/bin"),
+        ("export x=~; echo $x", "/h/me"),
+        // only `~` or `~/` at the start of a word, and not quoted
+        ("echo '~' \"~\" \\~ a~ ~x ~\"/x\"", "~ ~ ~ a~ ~x ~/x"),
+    ] {
+        let out = reef()
+            .env("HOME", "/h/me")
+            .args(["-c", src])
+            .output()
+            .unwrap();
+        let got = String::from_utf8_lossy(&out.stdout);
+        if got.trim_end() != want {
+            failed.push(format!("{src:?}\n  want {want:?}\n  got  {got:?}"));
+        }
+    }
+    assert!(failed.is_empty(), "\n{}", failed.join("\n"));
+}
+
+#[test]
+fn a_tilde_home_is_never_split_or_globbed() {
+    let dir = glob_dir("reef_tilde_glob");
+    reef()
+        .current_dir(&dir)
+        .env("HOME", "my *  home")
+        .args(["-c", "echo ~"])
+        .assert()
+        .success()
+        .stdout("my *  home\n");
+}
+
+#[test]
+fn cd_tilde_goes_home() {
+    let dir = temp_dir("reef_cd_tilde");
+    let out = reef()
+        .env("HOME", &dir)
+        .args(["-c", "cd /; cd ~ && pwd"])
+        .output()
+        .unwrap();
+    let got = String::from_utf8_lossy(&out.stdout);
+    assert!(same_dir(got.trim_end(), &dir), "{got}");
+}
+
 /// `src` with `REEF` replaced by the quoted path of the reef being tested, so
 /// a pipe can feed a second reef: a reader that exists on Windows and Linux.
 fn with_reef(src: &str) -> String {

@@ -66,6 +66,9 @@ pub fn exit_status(status: ExitStatus) -> i32 {
     }
 }
 
+/// File names are case-insensitive, so globs are too: `*.TXT` matches `a.txt`.
+pub const NAMES_IGNORE_CASE: bool = true;
+
 /// Environment variable names are case-insensitive on Windows: `Path` and `PATH` are one variable.
 pub fn var_key(name: &str) -> String {
     name.to_ascii_uppercase()

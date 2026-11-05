@@ -1,24 +1,61 @@
 //! Expansion: turning a `Word` into the strings a command actually gets.
 //!
-//! Unquoted `$x` is split into fields on spaces, tabs and newlines, and an
-//! unquoted `$x` that's empty disappears: with `x='a  b'`, `echo $x` gets two
-//! arguments, `echo "$x"` one. Quoted parts are never split.
+//! In order: `~` becomes the home directory; `$x` its value; an unquoted `$x`
+//! is split into fields on spaces, tabs and newlines (and disappears if
+//! empty); then each field with an unquoted `*`, `?` or `[` becomes the
+//! matching file names, if there are any. Quoted parts are never split or
+//! globbed: with `x='a  b'`, `echo $x` gets two arguments, `echo "$x"` one.
 
+use std::borrow::Cow;
+
+use crate::glob;
+use crate::platform;
 use crate::shell::Shell;
 use crate::word::{Word, WordPart};
+
+/// A field being built: its text, and the same text as a glob pattern, with
+/// quoted `*?[\` escaped so they only match themselves.
+#[derive(Default)]
+struct Field {
+    text: String,
+    pattern: String,
+}
+
+impl Field {
+    fn push(&mut self, s: &str, quoted: bool) {
+        self.text.push_str(s);
+        for c in s.chars() {
+            if quoted && matches!(c, '*' | '?' | '[' | '\\') {
+                self.pattern.push('\\');
+            }
+            self.pattern.push(c);
+        }
+    }
+
+    /// The file names it matches, or just its text if it matches none.
+    fn glob(self, cwd: &std::path::Path) -> Vec<String> {
+        if !glob::is_pattern(&self.pattern) {
+            return vec![self.text];
+        }
+        match glob::expand(&self.pattern, cwd) {
+            paths if paths.is_empty() => vec![self.text],
+            paths => paths,
+        }
+    }
+}
 
 /// A command argument: zero or more fields.
 // shortcut: splits on the default IFS (space, tab, newline) and ignores `$IFS`; read it once someone sets IFS
 pub fn fields(word: &Word, sh: &Shell) -> Vec<String> {
     let mut fields = Vec::new();
     // The field being built; `Some` once anything, even `""`, started it
-    let mut cur: Option<String> = None;
-    for part in &word.parts {
+    let mut cur: Option<Field> = None;
+    for part in &tilde(word, sh).parts {
         match part {
-            WordPart::Literal { text, .. } => cur.get_or_insert_default().push_str(text),
+            WordPart::Literal { text, quoted } => cur.get_or_insert_default().push(text, *quoted),
             WordPart::Param {
                 name, quoted: true, ..
-            } => cur.get_or_insert_default().push_str(&value(name, sh)),
+            } => cur.get_or_insert_default().push(&value(name, sh), true),
             WordPart::Param { name, .. } => {
                 let value = value(name, sh);
                 let is_blank = |c: char| matches!(c, ' ' | '\t' | '\n');
@@ -30,7 +67,7 @@ pub fn fields(word: &Word, sh: &Shell) -> Vec<String> {
                     if i > 0 {
                         fields.extend(cur.take());
                     }
-                    cur.get_or_insert_default().push_str(piece);
+                    cur.get_or_insert_default().push(piece, false);
                 }
                 if value.ends_with(is_blank) {
                     fields.extend(cur.take());
@@ -39,18 +76,42 @@ pub fn fields(word: &Word, sh: &Shell) -> Vec<String> {
         }
     }
     fields.extend(cur);
-    fields
+    fields.into_iter().flat_map(|f| f.glob(sh.cwd())).collect()
 }
 
-/// One string, never split: for `x=$y` values and redirect targets.
+/// One string, never split or globbed: for `x=$y` values and redirect targets.
 pub fn single(word: &Word, sh: &Shell) -> String {
-    word.parts
+    tilde(word, sh)
+        .parts
         .iter()
         .map(|part| match part {
             WordPart::Literal { text, .. } => text.clone(),
             WordPart::Param { name, .. } => value(name, sh),
         })
         .collect()
+}
+
+/// `~` or `~/...` at the start of `word` becomes the home directory, as if
+/// quoted, so it's never split or globbed. `~x`, `'~'` and `a~` stay as they are.
+// shortcut: `~user` stays literal; it needs the user database
+fn tilde<'a>(word: &'a Word, sh: &Shell) -> Cow<'a, Word> {
+    if let Some((
+        WordPart::Literal {
+            text,
+            quoted: false,
+        },
+        rest,
+    )) = word.parts.split_first()
+        && (text == "~" && rest.is_empty() || text.starts_with("~/"))
+        && let Some(home) = sh.first_var(platform::HOME_VARS)
+    {
+        let mut expanded = Word::default();
+        expanded.push_str(home, true);
+        expanded.push_str(&text[1..], false);
+        expanded.parts.extend_from_slice(rest);
+        return Cow::Owned(expanded);
+    }
+    Cow::Borrowed(word)
 }
 
 /// `$?` is the last status; an unset variable is empty.

@@ -40,6 +40,9 @@ pub fn exit_status(status: ExitStatus) -> i32 {
         .unwrap_or(1)
 }
 
+/// File names are case-sensitive: `*.TXT` doesn't match `a.txt`.
+pub const NAMES_IGNORE_CASE: bool = false;
+
 /// Environment variable names are case-sensitive on Unix.
 pub fn var_key(name: &str) -> String {
     name.to_string()

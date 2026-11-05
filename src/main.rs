@@ -2,6 +2,7 @@ mod ast;
 mod builtins;
 mod exec;
 mod expand;
+mod glob;
 mod lexer;
 mod parser;
 mod platform;
