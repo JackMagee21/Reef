@@ -16,9 +16,10 @@ A builtin is a command Reef runs itself, as a Rust function, instead of starting
 | `true` / `false` | `builtins/true_cmd.rs`, `false_cmd.rs` | ignore their arguments, return 0 / 1 |
 | `exit [n]` | `builtins/exit.rs` | exits with `n` mod 256 (`exit 300` → 44, `exit -1` → 255), or with `$?` when no `n` is given. `exit abc` prints an error and exits with 2. `exit 1 2` prints "too many arguments", returns 1 and does **not** exit |
 | `pwd` | `builtins/pwd.rs` | prints `sh.cwd()`. `-L`/`-P` are ignored |
-| `cd [dir \| -]` | `builtins/cd.rs` | no argument: `$HOME` (on Windows, `$USERPROFILE` if `HOME` is unset). `-`: `$OLDPWD`, and prints it. Paths are relative to `sh.cwd()`. **Physical**: `..` is the real parent, even through a symlink. On success sets `PWD` and `OLDPWD` (exported). On failure prints why, returns 1 and stays put |
+| `cd [dir \| -]` | `builtins/cd.rs` | no argument: `$HOME` (on Windows, `$USERPROFILE` if `HOME` is unset). `-`: `$OLDPWD`, and prints it. Paths are relative to `sh.cwd()`. **Physical**: `..` is the real parent, even through a symlink. A directory without search (execute) permission is refused. On success sets `PWD` and `OLDPWD` (exported). On failure prints why, returns 1 and stays put |
 | `type [name...]` | `builtins/type_cmd.rs` | for each name, prints `name is a shell builtin` or `name is <path>`, checking builtins first, then `PATH` (with `PATHEXT` on Windows). A missing name prints `reef: type: name: not found`; the rest are still checked, and the status is 1 if any was missing. No options (`-t`, `-a`, `-p`) yet |
-| `unset [name...]` | `builtins/unset.rs` | removes each variable, exported or not, so later programs don't get it either. A name that was never set isn't an error, so it always returns 0. Names are case-insensitive on Windows (`unset path` removes `PATH`). No `-f`/`-v` yet, since there are no functions |
+| `export [name[=value]...]` | `builtins/export.rs` | `name=value` sets and exports; `name` exports it if it's set. With no arguments or `-p`, lists exported variables sorted, as `export name='value'` (re-runnable). Names must be a letter or `_`, then letters, digits or `_`: a bad one prints `reef: export: `1x': not a valid identifier`, the rest are still exported, and the status is 1 |
+| `unset [-v] [name...]` | `builtins/unset.rs` | removes each variable, exported or not, so later programs don't get it either. A name that was never set isn't an error. Names are case-insensitive on Windows (`unset path` removes `PATH`). An invalid name is reported like `export` does and makes the status 1. `-v` is accepted; no `-f` yet, since there are no functions |
 
 `echo hi -n` prints `hi -n`, because `-n` only counts as the first argument.
 
@@ -54,6 +55,6 @@ Unused parameters get a leading `_` (for example `_sh`). Keeping one shape means
 
 ## Planned, roughly in order
 
-`export`, `alias`, `source`, `test`/`[`, then `read`, `printf`, `shift`, `return`, `set`, then `jobs`, `wait`, `history`.
+`alias`, `source`, `test`/`[`, then `read`, `printf`, `shift`, `return`, `set`, then `jobs`, `wait`, `history`.
 
 Coreutils like `ls`, `grep` and `cp` are deliberately **not** planned as builtins for now. Real tools already cover them, and they'd pull focus from the shell itself.
