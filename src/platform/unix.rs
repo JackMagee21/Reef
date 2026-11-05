@@ -13,6 +13,7 @@ use crate::shell::Shell;
 /// at all, so a file without the execute bit fails to start (126, "Permission
 /// denied") rather than being "not found" (127), like bash.
 /// Empty and relative `PATH` entries are relative to `sh.cwd`, not Reef's start directory.
+/// With `PATH` unset, `DEFAULT_PATH` is searched, never the current directory.
 pub fn find_command(name: &str, sh: &Shell) -> Option<PathBuf> {
     if name.contains('/') {
         let path = sh.cwd().join(name);
@@ -22,10 +23,14 @@ pub fn find_command(name: &str, sh: &Shell) -> Option<PathBuf> {
         p.metadata()
             .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
     };
-    std::env::split_paths(sh.var("PATH").unwrap_or_default())
+    std::env::split_paths(sh.var("PATH").unwrap_or(DEFAULT_PATH))
         .map(|dir| sh.cwd().join(dir).join(name))
         .find(is_exec)
 }
+
+/// Searched when `PATH` is unset. Not empty: an empty `PATH` means the current
+/// directory, which would let any file there pose as `ls`.
+const DEFAULT_PATH: &str = "/usr/local/bin:/usr/bin:/bin";
 
 /// Turn a child's exit status into a shell status (`$?`): killed by signal N becomes 128 + N.
 pub fn exit_status(status: ExitStatus) -> i32 {
