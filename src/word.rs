@@ -3,15 +3,27 @@
 //! `"echo hhe"bb""` is ONE word made of three parts. Each part remembers whether
 //! it was quoted, because later `$x` vs `"$x"` and `*` vs `"*"` behave differently.
 
+use crate::shell::is_valid_name;
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Word {
     pub parts: Vec<WordPart>,
 }
 
-/// Later steps add `Param` ($x), `CommandSub` ($(...)), `Arith` ($((...))) and `Tilde`.
+/// Later steps add `CommandSub` ($(...)), `Arith` ($((...))) and `Tilde`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum WordPart {
-    Literal { text: String, quoted: bool },
+    Literal {
+        text: String,
+        quoted: bool,
+    },
+    /// `$x`, `${x}` or `$?`. `name` is whatever was between the braces;
+    /// `exec` refuses anything that isn't a plain name or `?` before running.
+    Param {
+        name: String,
+        braced: bool,
+        quoted: bool,
+    },
 }
 
 impl Word {
@@ -48,15 +60,71 @@ impl Word {
         }
     }
 
-    /// Every part's text joined, ignoring quoting: `a'b'c` is `abc`. Compare
-    /// `as_unquoted`, which only answers for a word with no quoting at all.
-    // shortcut: the expander replaces this once $x and globs exist
+    /// The word written back without quotes, for messages: `a'b'$x` is `ab$x`.
+    /// Running a command uses `expand` instead.
     pub fn joined_text(&self) -> String {
         self.parts
             .iter()
             .map(|p| match p {
-                WordPart::Literal { text, .. } => text.as_str(),
+                WordPart::Literal { text, .. } => text.clone(),
+                WordPart::Param {
+                    name, braced: true, ..
+                } => format!("${{{name}}}"),
+                WordPart::Param { name, .. } => format!("${name}"),
             })
             .collect()
+    }
+
+    /// `name=value` written plainly at the start: the name and the value as a
+    /// word of its own. `x=$y` and `x="a b"` count; `"x=1"` and `1x=2` don't.
+    pub fn assignment(&self) -> Option<(String, Word)> {
+        let (
+            WordPart::Literal {
+                text,
+                quoted: false,
+            },
+            rest,
+        ) = self.parts.split_first()?
+        else {
+            return None;
+        };
+        let (name, value) = text.split_once('=')?;
+        if !is_valid_name(name) {
+            return None;
+        }
+        let mut word = Word::default();
+        if !value.is_empty() {
+            word.push_str(value, false);
+        }
+        word.parts.extend_from_slice(rest);
+        Some((name.to_string(), word))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::lexer::{TokenKind, lex};
+
+    fn assignment(src: &str) -> Option<(String, String)> {
+        let TokenKind::Word(w) = &lex(src).unwrap()[0].kind else {
+            panic!("{src:?}")
+        };
+        w.assignment()
+            .map(|(name, value)| (name, value.joined_text()))
+    }
+
+    #[test]
+    fn assignments_need_a_plain_valid_name_first() {
+        let yes = |n: &str, v: &str| Some((n.to_string(), v.to_string()));
+        assert_eq!(assignment("x=1"), yes("x", "1"));
+        assert_eq!(assignment("x="), yes("x", ""));
+        assert_eq!(assignment("x=a=b"), yes("x", "a=b"));
+        assert_eq!(assignment("x=$y"), yes("x", "$y"));
+        assert_eq!(assignment("x='a b'c"), yes("x", "a bc"));
+        assert_eq!(assignment("'x'=1"), None);
+        assert_eq!(assignment("\"x=1\""), None);
+        assert_eq!(assignment("1x=1"), None);
+        assert_eq!(assignment("=1"), None);
+        assert_eq!(assignment("x"), None);
     }
 }

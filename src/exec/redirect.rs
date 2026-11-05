@@ -3,6 +3,7 @@
 use std::fs::OpenOptions;
 
 use crate::ast::Redirect;
+use crate::expand;
 use crate::lexer::Op;
 use crate::platform;
 use crate::shell::Shell;
@@ -17,7 +18,7 @@ use crate::streams::{Io, Stream, describe_error};
 pub fn apply(redirects: &[Redirect], sh: &Shell, io: &Io) -> Result<Io, String> {
     let mut io = io.try_clone().map_err(|e| describe_error(&e))?;
     for r in redirects {
-        let target = r.target.joined_text();
+        let target = expand::single(&r.target, sh);
         let stream = match r.op {
             // `2>&1`: a copy of another stream, as it is right now
             Op::GreatAnd | Op::LessAnd => {

@@ -6,13 +6,14 @@ use std::fmt;
 
 use crate::ast::{AndOr, Command, Connector, List, Pipeline, Redirect};
 use crate::builtins;
+use crate::expand;
 use crate::lexer::Op;
 use crate::parser;
 use crate::platform;
-use crate::shell::Shell;
+use crate::shell::{Shell, is_valid_name};
 use crate::status;
 use crate::streams::{Io, describe_error};
-use crate::word::Word;
+use crate::word::{Word, WordPart};
 
 /// Parse and run one complete input: a line from the prompt, a `-c` string,
 /// or a multi-line command from a script. Returns the status, which is also
@@ -53,6 +54,9 @@ fn check_supported(list: &List) -> Result<(), String> {
                 return Err("pipelines (`|`)".into());
             }
             for c in &p.commands {
+                if let Command::Simple { words, .. } = c {
+                    words.iter().try_for_each(check_word)?;
+                }
                 c.redirects().iter().try_for_each(check_redirect)?;
                 if let Some(body) = c.body() {
                     check_supported(body)?;
@@ -63,7 +67,21 @@ fn check_supported(list: &List) -> Result<(), String> {
     Ok(())
 }
 
+/// `${x}` and `$?` can run; `${x:-default}` and friends can't yet.
+fn check_word(w: &Word) -> Result<(), String> {
+    for part in &w.parts {
+        if let WordPart::Param { name, .. } = part
+            && name != "?"
+            && !is_valid_name(name)
+        {
+            return Err(format!("`${{{name}}}`"));
+        }
+    }
+    Ok(())
+}
+
 fn check_redirect(r: &Redirect) -> Result<(), String> {
+    check_word(&r.target)?;
     if matches!(r.op, Op::DLess | Op::DLessDash) {
         // The body is the lines after the command; reading those comes later
         return Err(format!("heredocs (`{r}`)"));
@@ -142,25 +160,58 @@ fn command(c: &Command, sh: &mut Shell, outer: &mut Io) -> i32 {
 /// The command itself, with whatever streams it was given.
 fn run_command(c: &Command, sh: &mut Shell, io: &mut Io) -> i32 {
     match c {
-        Command::Simple { words, .. } => {
-            let argv: Vec<String> = words.iter().map(Word::joined_text).collect();
-            simple(&argv, sh, io)
-        }
+        Command::Simple { words, .. } => simple(words, sh, io),
         Command::Group { body, .. } => list(body, sh, io),
         // A copy of the shell: `cd`, variables and `exit` inside only affect the copy
         Command::Subshell { body, .. } => list(body, &mut sh.clone(), io),
     }
 }
 
-/// One command: a builtin, or a program found on `PATH`.
-fn simple(argv: &[String], sh: &mut Shell, io: &mut Io) -> i32 {
+/// One command: `name=value` words, then a builtin or a program found on `PATH`.
+///
+/// With no command left after expansion, the assignments set shell variables
+/// (left to right, so `x=1 y=$x` works). Before a program, they're only in its
+/// environment.
+fn simple(words: &[Word], sh: &mut Shell, io: &mut Io) -> i32 {
+    let split = words
+        .iter()
+        .position(|w| w.assignment().is_none())
+        .unwrap_or(words.len());
+    let (assignments, words) = words.split_at(split);
+
+    // `export x=$y` must not split `$y`, like a plain `x=$y` (POSIX "declaration utility")
+    let declares = words.first().and_then(Word::as_unquoted) == Some("export");
+    let argv: Vec<String> = words
+        .iter()
+        .flat_map(|w| match w.assignment() {
+            Some(_) if declares => vec![expand::single(w, sh)],
+            _ => expand::fields(w, sh),
+        })
+        .collect();
+
     let Some(name) = argv.first() else {
+        for (name, value) in assignments.iter().filter_map(Word::assignment) {
+            let value = expand::single(&value, sh);
+            sh.set_var(&name, value, false);
+        }
         return 0;
     };
+    let env: Vec<(String, String)> = assignments
+        .iter()
+        .filter_map(Word::assignment)
+        .map(|(name, value)| (name, expand::single(&value, sh)))
+        .collect();
 
     // Builtins first, then PATH
     if let Some(builtin) = builtins::lookup(name) {
-        return builtin(sh, argv, io);
+        if let Some((var, _)) = env.first() {
+            // shortcut: would need setting and restoring the variable around the builtin
+            io.error(format_args!(
+                "not supported yet: assignments before a builtin (`{var}=... {name}`)"
+            ));
+            return status::SYNTAX_ERROR;
+        }
+        return builtin(sh, &argv, io);
     }
 
     let Some(path) = platform::find_command(name, sh) else {
@@ -187,6 +238,7 @@ fn simple(argv: &[String], sh: &mut Shell, io: &mut Io) -> i32 {
         .current_dir(sh.cwd())
         .env_clear()
         .envs(sh.exported_vars())
+        .envs(env)
         .stdin(stdin)
         .stdout(stdout)
         .stderr(stderr)
