@@ -63,6 +63,11 @@ pub fn redirect_path(cwd: &Path, target: &str) -> PathBuf {
     resolve(cwd, target)
 }
 
+/// Unix can replace a running program's file directly, so `--update` needs nothing moved.
+pub fn move_aside_running_exe(_exe: &Path) -> std::io::Result<Option<PathBuf>> {
+    Ok(None)
+}
+
 /// Reef's stdin as an unbuffered file, so reading it never reads ahead.
 pub fn stdin_file() -> std::io::Result<File> {
     Ok(File::from(std::io::stdin().as_fd().try_clone_to_owned()?))

@@ -121,6 +121,19 @@ pub fn redirect_path(cwd: &Path, target: &str) -> PathBuf {
     }
 }
 
+/// Windows can't overwrite a running `.exe`, but it can rename one. `--update`
+/// moves `reef.exe` to `reef.old.exe` so cargo can write the new one.
+pub fn move_aside_running_exe(exe: &Path) -> std::io::Result<Option<PathBuf>> {
+    let old = exe.with_extension("old.exe");
+    // Left by the last update. Still locked if that reef is running in another window.
+    match std::fs::remove_file(&old) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+        _ => {}
+    }
+    std::fs::rename(exe, &old)?;
+    Ok(Some(old))
+}
+
 /// Reef's stdin as an unbuffered file, so reading it never reads ahead.
 pub fn stdin_file() -> std::io::Result<File> {
     Ok(File::from(
