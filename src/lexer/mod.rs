@@ -1,7 +1,8 @@
 //! Turns a line of text into tokens: words (following POSIX quoting rules)
 //! and operators, each with its span.
 //!
-//! `$` forms and heredoc bodies come in later slices.
+//! `$x`, `${x}` and `$?` become `WordPart::Param`; `$(...)`, `$((...))` and
+//! heredoc bodies come in later slices.
 
 mod token;
 
@@ -11,7 +12,7 @@ use std::str::CharIndices;
 
 pub use token::{Op, Span, Token, TokenKind};
 
-use crate::word::Word;
+use crate::word::{Word, WordPart};
 
 #[derive(Debug, PartialEq)]
 pub enum LexError {
@@ -48,9 +49,14 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
                 word(&mut cur, i).push_str(&text, true);
             }
 
-            '"' => {
-                let text = read_double_quoted(&mut chars)?;
-                word(&mut cur, i).push_str(&text, true);
+            '"' => read_double_quoted(&mut chars, word(&mut cur, i))?,
+
+            '$' => {
+                let w = word(&mut cur, i);
+                match read_param(&mut chars, false)? {
+                    Some(param) => w.parts.push(param),
+                    None => w.push_char('$', false),
+                }
             }
 
             // Unquoted backslash: the next character is literal
@@ -139,28 +145,76 @@ fn read_single_quoted(chars: &mut Peekable<CharIndices>) -> Result<String, LexEr
     }
 }
 
-/// The text after an opening `"`, up to the closing one. Literal, except that
-/// `\` escapes `$`, `` ` ``, `"`, `\` and newline.
-fn read_double_quoted(chars: &mut Peekable<CharIndices>) -> Result<String, LexError> {
-    let mut text = String::new();
+/// The text after an opening `"`, up to the closing one, added to `word` as
+/// quoted parts. Literal, except for `$x` forms, and `\` escaping `$`, `` ` ``,
+/// `"`, `\` and newline.
+fn read_double_quoted(chars: &mut Peekable<CharIndices>, word: &mut Word) -> Result<(), LexError> {
+    // `""` is still a (quoted, empty) part, so `echo ""` gets one empty argument
+    word.push_str("", true);
     loop {
         match chars.next() {
-            Some((_, '"')) => return Ok(text),
+            Some((_, '"')) => return Ok(()),
             Some((_, '\\')) => match chars.peek() {
                 Some(&(_, n @ ('$' | '`' | '"' | '\\'))) => {
                     chars.next();
-                    text.push(n);
+                    word.push_char(n, true);
                 }
                 // backslash-newline is a line continuation: both disappear
                 Some((_, '\n')) => {
                     chars.next();
                 }
                 // any other backslash stays as-is: "a\b" is a\b
-                _ => text.push('\\'),
+                _ => word.push_char('\\', true),
             },
-            Some((_, c)) => text.push(c),
+            Some((_, '$')) => match read_param(chars, true)? {
+                Some(param) => word.parts.push(param),
+                None => word.push_char('$', true),
+            },
+            Some((_, c)) => word.push_char(c, true),
             None => return Err(LexError::Incomplete("unclosed \"")),
         }
+    }
+}
+
+/// What follows a `$`: `name`, `{anything}` or `?`. `None` when it's none of
+/// those, and the `$` is just a character (`echo $` or `a$ b`).
+// shortcut: `$1`, `$#`, `$$`, `$@` stay literal; add them with positional arguments
+fn read_param(
+    chars: &mut Peekable<CharIndices>,
+    quoted: bool,
+) -> Result<Option<WordPart>, LexError> {
+    let param = |name: String, braced| {
+        Some(WordPart::Param {
+            name,
+            braced,
+            quoted,
+        })
+    };
+    match chars.peek() {
+        Some((_, '{')) => {
+            chars.next();
+            let mut name = String::new();
+            loop {
+                match chars.next() {
+                    Some((_, '}')) => return Ok(param(name, true)),
+                    Some((_, c)) => name.push(c),
+                    None => return Err(LexError::Incomplete("unclosed ${")),
+                }
+            }
+        }
+        Some((_, '?')) => {
+            chars.next();
+            Ok(param("?".into(), false))
+        }
+        Some(&(_, c)) if c.is_ascii_alphabetic() || c == '_' => {
+            let mut name = String::new();
+            while let Some((_, c)) = chars.next_if(|&(_, c)| c.is_ascii_alphanumeric() || c == '_')
+            {
+                name.push(c);
+            }
+            Ok(param(name, false))
+        }
+        _ => Ok(None),
     }
 }
 
@@ -208,7 +262,6 @@ fn io_number(w: &Word) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::word::WordPart;
 
     /// Just the words, as plain text. Newlines are skipped; any other operator fails the test.
     fn plain(src: &str) -> Vec<String> {
@@ -323,6 +376,41 @@ mod tests {
             lex("echo a \\\n"),
             Err(LexError::Incomplete("line continuation"))
         );
+    }
+
+    #[test]
+    fn dollar_forms_become_params_except_in_single_quotes() {
+        let parts = |src| match &lex(src).unwrap()[..] {
+            [
+                Token {
+                    kind: TokenKind::Word(w),
+                    ..
+                },
+            ] => w.parts.clone(),
+            other => panic!("{other:?}"),
+        };
+        let param = |name: &str, braced, quoted| WordPart::Param {
+            name: name.into(),
+            braced,
+            quoted,
+        };
+        assert_eq!(parts("$x_1"), [param("x_1", false, false)]);
+        assert_eq!(
+            parts("a${b}c"),
+            [lit("a", false), param("b", true, false), lit("c", false)]
+        );
+        assert_eq!(parts("$?"), [param("?", false, false)]);
+        assert_eq!(
+            parts(r#""a $x""#),
+            [lit("a ", true), param("x", false, true)]
+        );
+        assert_eq!(parts("'$x'"), [lit("$x", true)]);
+        assert_eq!(parts(r"\$x"), [lit("$", true), lit("x", false)]);
+        // `$` before anything else is just a character
+        assert_eq!(parts("a$"), [lit("a$", false)]);
+        assert_eq!(parts("$1"), [lit("$1", false)]);
+        assert_eq!(parts(r#""$""#), [lit("$", true)]);
+        assert_eq!(lex("${x"), Err(LexError::Incomplete("unclosed ${")));
     }
 
     #[test]

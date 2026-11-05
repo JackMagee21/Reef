@@ -1,6 +1,7 @@
 mod ast;
 mod builtins;
 mod exec;
+mod expand;
 mod lexer;
 mod parser;
 mod platform;
@@ -8,6 +9,7 @@ mod repl;
 mod shell;
 mod status;
 mod streams;
+mod update;
 mod word;
 
 use shell::Shell;
@@ -30,13 +32,18 @@ fn main() {
 
     let exit_code = match (args.get(1).map(String::as_str), args.get(2)) {
         (None, _) => repl::start(&mut sh, &mut io),
+        (Some("--version" | "-V"), _) => {
+            println!("reef {}", env!("CARGO_PKG_VERSION"));
+            0
+        }
+        (Some("--update"), _) => update::run(),
         (Some("-c"), Some(src)) => exec::run_source(src, &mut sh, &mut io),
         (Some("-c"), None) => {
             eprintln!("reef: -c: option requires an argument");
             status::SYNTAX_ERROR
         }
         (Some(_), _) => {
-            eprintln!("usage: reef [-c <command>]");
+            eprintln!("usage: reef [-c <command> | --version | --update]");
             status::SYNTAX_ERROR
         }
     };

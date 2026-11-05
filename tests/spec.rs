@@ -160,6 +160,31 @@ const CASES: &[(&str, &str, i32)] = &[
     ("export =x || echo failed", "failed\n", 0),
     ("export REEF_A", "", 0),
     ("export REEF_A=x=y; export -p > /dev/null", "", 0),
+    // variables: $x, ${x}, $? and name=value
+    ("x=hello; echo $x", "hello\n", 0),
+    ("x=hello; echo ${x}world \"$x!\"", "helloworld hello!\n", 0),
+    ("echo $reef_unset_var end", "end\n", 0),
+    ("echo \"$reef_unset_var\" end", " end\n", 0),
+    ("x='a   b'; echo $x", "a b\n", 0),
+    ("x='a   b'; echo \"$x\"", "a   b\n", 0),
+    ("echo '$x' \\$x \"\\$x\" $ a$", "$x $x $x $ a$\n", 0),
+    ("false; echo $?; echo $?", "1\n0\n", 0),
+    ("false || echo $?", "1\n", 0),
+    ("x=1 y=$x; echo $y", "1\n", 0),
+    ("x=; echo \"[$x]\"", "[]\n", 0),
+    ("x=a\"b c\"; echo $x", "ab c\n", 0),
+    ("'x=1'", "", 127),
+    ("x=1; (x=2; echo $x); echo $x", "2\n1\n", 0),
+    ("x=1; { x=2; }; echo $x", "2\n", 0),
+    ("x=2; exit $x", "", 2),
+    ("x=1; unset x; echo \"[$x]\"", "[]\n", 0),
+    // `export x=$y` doesn't split `$y`, like a plain assignment
+    ("y='a  b'; export x=$y; echo \"$x\"", "a  b\n", 0),
+    (
+        "x=reef_echo_arg; echo $x$x",
+        "reef_echo_argreef_echo_arg\n",
+        0,
+    ),
 ];
 
 #[test]
@@ -333,6 +358,23 @@ const ERRORS: &[(&str, &str, i32)] = &[
         1,
     ),
     ("unset -f", "reef: unset: `-f': not a valid identifier\n", 1),
+    ("echo ${x:-y}", "reef: not supported yet: `${x:-y}`\n", 2),
+    ("echo hi > ${}", "reef: not supported yet: `${}`\n", 2),
+    (
+        "echo ${x",
+        "reef: syntax error: unexpected end of input: unclosed ${\n",
+        2,
+    ),
+    (
+        "x=1 echo hi",
+        "reef: not supported yet: assignments before a builtin (`x=... echo`)\n",
+        2,
+    ),
+    (
+        "x=reef_nosuch; $x",
+        "reef: reef_nosuch: command not found\n",
+        127,
+    ),
     // Too big for a file descriptor: refused, not run as `echo 99999999999 > x`
     (
         "echo 99999999999>x",
@@ -461,6 +503,55 @@ fn non_utf8_environment_does_not_crash() {
         .assert()
         .success()
         .stdout("ok\n");
+}
+
+#[test]
+fn version_flag_prints_the_version() {
+    reef()
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(format!("reef {}\n", env!("CARGO_PKG_VERSION")));
+}
+
+#[test]
+fn update_refuses_a_reef_that_cargo_install_didnt_put_there() {
+    // The test binary lives in target/debug, not a cargo install `bin` folder
+    let out = reef().arg("--update").output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("wasn't installed with `cargo install`"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn variables_carry_over_between_piped_lines() {
+    piped("x=piped\necho \"$x ${x}\"\n")
+        .success()
+        .stdout("piped piped\n");
+}
+
+#[test]
+fn redirect_targets_expand_without_splitting() {
+    let dir = temp_dir("reef_redirect_var");
+    reef_in(&dir, "f='out file'; echo hi > $f; echo $? >> \"$f\"").success();
+    assert_eq!(read(&dir, "out file"), "hi\n0\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn assignments_before_a_program_only_reach_that_program() {
+    reef()
+        .args([
+            "-c",
+            "REEF_G=hi sh -c 'echo $REEF_G'; echo \"[$REEF_G]\"; \
+             x=local; sh -c 'echo [$x]'; export x; sh -c 'echo [$x]'",
+        ])
+        .assert()
+        .success()
+        .stdout("hi\n[]\n[]\n[local]\n");
 }
 
 #[test]
