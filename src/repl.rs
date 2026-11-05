@@ -137,7 +137,8 @@ fn piped(sh: &mut Shell, io: &mut Io) -> i32 {
 
 /// One line without its `\n` / `\r\n`, or `None` at end of input.
 /// Reads a byte at a time, like bash does on a pipe: slow, but never takes
-/// bytes that belong to the next line.
+/// bytes that belong to the next line. Invalid UTF-8 becomes `\u{FFFD}`
+/// rather than stopping the whole script.
 fn read_line(r: &mut impl Read) -> std::io::Result<Option<String>> {
     let mut line = Vec::new();
     let mut byte = [0u8];
@@ -154,9 +155,7 @@ fn read_line(r: &mut impl Read) -> std::io::Result<Option<String>> {
     if line.last() == Some(&b'\r') {
         line.pop();
     }
-    String::from_utf8(line)
-        .map(Some)
-        .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))
+    Ok(Some(String::from_utf8_lossy(&line).into_owned()))
 }
 
 #[cfg(test)]
