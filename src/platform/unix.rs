@@ -61,6 +61,17 @@ pub fn host_name(sh: &Shell) -> String {
         .unwrap_or_else(|| "localhost".into())
 }
 
+/// Where Reef keeps its own files, like the history:
+/// `$XDG_DATA_HOME/reef`, or `~/.local/share/reef`. `None` without a home.
+pub fn data_dir(sh: &Shell) -> Option<PathBuf> {
+    let base = match sh.var("XDG_DATA_HOME") {
+        // The XDG spec says to ignore relative paths
+        Some(dir) if Path::new(dir).is_absolute() => PathBuf::from(dir),
+        _ => Path::new(sh.var("HOME").filter(|h| !h.is_empty())?).join(".local/share"),
+    };
+    Some(base.join("reef"))
+}
+
 /// Unix paths from `canonicalize` are already clean.
 pub fn clean_path(path: PathBuf) -> PathBuf {
     path
@@ -84,4 +95,30 @@ pub fn move_aside_running_exe(_exe: &Path) -> std::io::Result<Option<PathBuf>> {
 /// Reef's stdin as an unbuffered file, so reading it never reads ahead.
 pub fn stdin_file() -> std::io::Result<File> {
     Ok(File::from(std::io::stdin().as_fd().try_clone_to_owned()?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn data_dir_follows_xdg_then_home() {
+        let mut sh = Shell::new();
+        sh.set_var("HOME", "/home/jmt".into(), false);
+        sh.unset_var("XDG_DATA_HOME");
+        assert_eq!(
+            data_dir(&sh),
+            Some(PathBuf::from("/home/jmt/.local/share/reef"))
+        );
+        sh.set_var("XDG_DATA_HOME", "/data".into(), false);
+        assert_eq!(data_dir(&sh), Some(PathBuf::from("/data/reef")));
+        sh.set_var("XDG_DATA_HOME", "relative".into(), false);
+        assert_eq!(
+            data_dir(&sh),
+            Some(PathBuf::from("/home/jmt/.local/share/reef"))
+        );
+        sh.unset_var("XDG_DATA_HOME");
+        sh.unset_var("HOME");
+        assert_eq!(data_dir(&sh), None);
+    }
 }

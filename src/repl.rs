@@ -5,8 +5,8 @@ use std::io::{ErrorKind, IsTerminal, Read};
 use std::path::{MAIN_SEPARATOR, Path};
 
 use reedline::{
-    Color, Prompt, PromptEditMode, PromptHistorySearch, Reedline, Signal, ValidationResult,
-    Validator,
+    Color, DefaultHinter, FileBackedHistory, HISTORY_SIZE, Prompt, PromptEditMode,
+    PromptHistorySearch, Reedline, Signal, ValidationResult, Validator,
 };
 
 use crate::exec;
@@ -55,14 +55,26 @@ pub fn start(sh: &mut Shell, io: &mut Io) -> i32 {
     }
 }
 
-// shortcut: no history file or completion yet; those come with the editor work
+// shortcut: no tab completion or highlighting yet; those come with the editor work
 fn interactive(sh: &mut Shell, io: &mut Io) -> i32 {
-    let mut editor = Reedline::create().with_validator(Box::new(Continue));
+    // The faded "ghost" suggestion from history as you type; → accepts it
+    let mut editor = Reedline::create()
+        .with_validator(Box::new(Continue))
+        .with_hinter(Box::new(
+            DefaultHinter::default().with_style(Color::DarkGray.italic()),
+        ));
+    match saved_history(sh) {
+        Ok(history) => editor = editor.with_history(Box::new(history)),
+        // Up-arrow and suggestions still work, just for this session
+        Err(e) => eprintln!("reef: history won't be saved: {e}"),
+    }
 
-    let banner = Color::Cyan
+    let title = Color::Cyan
         .bold()
         .paint(format!("reef {}", env!("CARGO_PKG_VERSION")));
-    if let Err(e) = io.write_out(format!("{banner}\n").as_bytes()) {
+    // Same faded grey as the history suggestions
+    let hint = Color::DarkGray.paint("run `reef --update` to get the newest version");
+    if let Err(e) = io.write_out(format!("{title}\n{hint}\n").as_bytes()) {
         eprintln!("reef: {e}");
     }
 
@@ -81,6 +93,13 @@ fn interactive(sh: &mut Shell, io: &mut Io) -> i32 {
             }
         }
     }
+}
+
+/// History in `<data dir>/history`, so Up-arrow and suggestions remember
+/// commands from earlier sessions.
+fn saved_history(sh: &Shell) -> Result<FileBackedHistory, String> {
+    let dir = platform::data_dir(sh).ok_or("no home directory")?;
+    FileBackedHistory::with_file(HISTORY_SIZE, dir.join("history")).map_err(|e| e.to_string())
 }
 
 /// `jmt@link:~/src$ `, colored like Debian and Ubuntu's bash prompt.

@@ -82,6 +82,11 @@ pub fn host_name(sh: &Shell) -> String {
     sh.var("COMPUTERNAME").unwrap_or("localhost").to_string()
 }
 
+/// Where Reef keeps its own files, like the history: `%APPDATA%\reef`.
+pub fn data_dir(sh: &Shell) -> Option<PathBuf> {
+    Some(Path::new(sh.var("APPDATA").filter(|d| !d.is_empty())?).join("reef"))
+}
+
 /// Drop the `\\?\` prefix `canonicalize` adds, so users see `C:\dir`, not `\\?\C:\dir`.
 // ponytail: plain string strip; paths over 260 chars may need the prefix kept, revisit if anyone hits it
 pub fn clean_path(path: PathBuf) -> PathBuf {
