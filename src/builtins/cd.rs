@@ -32,10 +32,16 @@ pub fn cd(sh: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
     };
 
     let new = match std::fs::canonicalize(platform::resolve(sh.cwd(), &target)) {
-        Ok(p) if p.is_dir() => platform::clean_path(p),
+        Ok(p) if p.is_dir() => p,
         Ok(_) => return fail(io, &format!("{target}: Not a directory")),
         Err(e) => return fail(io, &format!("{target}: {}", describe_error(&e))),
     };
+    // Looking inside needs search (execute) permission, which `is_dir` doesn't
+    // check. Without it every program started there would fail.
+    if let Err(e) = std::fs::metadata(new.join(".")) {
+        return fail(io, &format!("{target}: {}", describe_error(&e)));
+    }
+    let new = platform::clean_path(new);
 
     sh.set_cwd(new);
 
