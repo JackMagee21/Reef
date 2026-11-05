@@ -524,6 +524,15 @@ fn version_flag_prints_the_version() {
 }
 
 #[test]
+fn check_update_explains_a_reef_that_cargo_install_didnt_put_there() {
+    let out = reef().arg("--check-update").output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.starts_with("reef: --check-update: "), "{stderr}");
+    assert!(stderr.contains("cargo install"), "{stderr}");
+}
+
+#[test]
 fn update_refuses_a_reef_that_cargo_install_didnt_put_there() {
     // The test binary lives in target/debug, not a cargo install `bin` folder
     let out = reef().arg("--update").output().unwrap();

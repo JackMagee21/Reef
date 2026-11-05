@@ -38,13 +38,14 @@ fn main() {
             0
         }
         (Some("--update"), _) => update::run(),
+        (Some("--check-update"), _) => update::check(),
         (Some("-c"), Some(src)) => exec::run_source(src, &mut sh, &mut io),
         (Some("-c"), None) => {
             eprintln!("reef: -c: option requires an argument");
             status::SYNTAX_ERROR
         }
         (Some(_), _) => {
-            eprintln!("usage: reef [-c <command> | --version | --update]");
+            eprintln!("usage: reef [-c <command> | --version | --update | --check-update]");
             status::SYNTAX_ERROR
         }
     };
