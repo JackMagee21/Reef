@@ -196,6 +196,35 @@ const CASES: &[(&str, &str, i32)] = &[
     ("x=1; echo a | x=2; echo $x", "1\n", 0),
     ("exit 3 | echo after", "after\n", 0),
     ("echo a | exit 4; echo $?", "4\n", 0),
+    // $(...): the output, without trailing newlines
+    ("echo $(echo hi)", "hi\n", 0),
+    ("echo \"[$(echo hi)]\"", "[hi]\n", 0),
+    ("echo a$(echo)b", "ab\n", 0),
+    ("echo $(echo $(echo deep))", "deep\n", 0),
+    ("$(echo echo) hi", "hi\n", 0),
+    ("echo $(echo a | echo b)", "b\n", 0),
+    ("echo $(echo hi > /dev/null)x", "x\n", 0),
+    ("echo $( (echo sub) )", "sub\n", 0),
+    // unquoted it's split like $x; quoted it's kept whole
+    ("echo $(echo 'a  b')", "a b\n", 0),
+    ("echo \"$(echo 'a  b')\"", "a  b\n", 0),
+    ("echo $(echo a; echo b)", "a b\n", 0),
+    ("echo \"$(echo a; echo b)\"", "a\nb\n", 0),
+    ("x=$(echo a  b); echo \"$x\"", "a b\n", 0),
+    // a `)` inside quotes, after `\` or in a comment doesn't end it
+    ("echo $(echo ')') x", ") x\n", 0),
+    ("echo \"$(echo \")\")\"", ")\n", 0),
+    ("echo $(echo \\))", ")\n", 0),
+    ("echo $(echo hi # )\n)", "hi\n", 0),
+    ("echo \"$(echo '$x')\"", "$x\n", 0),
+    // a copy of the shell, like ( )
+    ("x=1; echo $(x=2; echo $x) $x", "2 1\n", 0),
+    ("echo $(exit 3; echo no) after", "after\n", 0),
+    // with no command, the status is the substitution's
+    ("x=$(false); echo $?", "1\n", 0),
+    ("$(exit 3); echo $?", "3\n", 0),
+    ("x=$(true); echo $?", "0\n", 0),
+    ("echo $(exit 4) $?", "4\n", 0),
 ];
 
 #[test]
@@ -399,6 +428,39 @@ const ERRORS: &[(&str, &str, i32)] = &[
         "echo é | nosuch_reef_cmd",
         "reef: nosuch_reef_cmd: command not found\n",
         127,
+    ),
+    // $(...): its errors still reach the screen
+    (
+        "echo $(nosuch_reef_cmd)",
+        "reef: nosuch_reef_cmd: command not found\n",
+        0,
+    ),
+    (
+        "echo $(echo hi",
+        "reef: syntax error: unexpected end of input: unclosed $(\n",
+        2,
+    ),
+    // checked before anything runs, inside too
+    (
+        "echo first; echo $(echo &&)",
+        "reef: syntax error: unexpected end of input: `&&` needs a command after it, \
+         inside `$(echo &&)`\n",
+        2,
+    ),
+    (
+        "echo $(while x)",
+        "reef: not supported yet: `while` (column 1), inside `$(while x)`\n",
+        2,
+    ),
+    (
+        "echo $(echo a &)",
+        "reef: not supported yet: background jobs (`&`)\n",
+        2,
+    ),
+    (
+        "echo $((1 + 2))",
+        "reef: not supported yet: arithmetic (`$((1 + 2))`)\n",
+        2,
     ),
 ];
 
@@ -609,6 +671,9 @@ fn globs_match_file_names() {
         ("x='*.txt'; echo \"$x\"", "*.txt"),
         // `x=*` doesn't glob; `$x` later does
         ("x=*.rs; echo \"$x\" $x", "*.rs c.rs"),
+        // so is an unquoted $(...)
+        ("echo $(echo '*.txt')", "a.txt b.txt"),
+        ("echo \"$(echo '*.txt')\"", "*.txt"),
     ] {
         let out = reef().current_dir(&dir).args(["-c", src]).output().unwrap();
         let got = String::from_utf8_lossy(&out.stdout);
@@ -671,6 +736,49 @@ fn cd_tilde_goes_home() {
 /// a pipe can feed a second reef: a reader that exists on Windows and Linux.
 fn with_reef(src: &str) -> String {
     src.replace("REEF", &format!("'{}'", env!("CARGO_BIN_EXE_reef")))
+}
+
+#[test]
+fn command_substitution_runs_programs() {
+    reef()
+        .args([
+            "-c",
+            &with_reef("echo \"got: $(REEF -c 'echo from reef')\""),
+        ])
+        .assert()
+        .success()
+        .stdout("got: from reef\n");
+}
+
+#[test]
+fn command_substitution_can_span_lines() {
+    piped("echo $(echo a\necho b)\necho next\n")
+        .success()
+        .stdout("a b\nnext\n");
+}
+
+/// A pipe holds about 64 KB: Reef must read while the command runs, or a
+/// command printing more than that waits forever for room.
+#[cfg(unix)]
+#[test]
+fn command_substitution_handles_big_output() {
+    let out = reef()
+        .args(["-c", "echo $(seq 1 100000) | wc -w"])
+        .timeout(std::time::Duration::from_secs(20))
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "100000");
+}
+
+#[cfg(unix)]
+#[test]
+fn command_substitution_drops_every_trailing_newline() {
+    reef()
+        .args(["-c", "echo \"[$(printf 'a\\n\\nb\\n\\n\\n')]\""])
+        .assert()
+        .success()
+        .stdout("[a\n\nb]\n");
 }
 
 #[test]

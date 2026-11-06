@@ -23,8 +23,8 @@ pub fn run_source(src: &str, sh: &mut Shell, io: &mut Io) -> i32 {
         Ok(program) => program,
         Err(e) => return refuse(sh, io, format_args!("{}: {}", e.label(), e.describe(src))),
     };
-    if let Err(what) = check_supported(&program) {
-        return refuse(sh, io, format_args!("not supported yet: {what}"));
+    if let Err(message) = check_supported(&program) {
+        return refuse(sh, io, message);
     }
     list(&program, sh, io)
 }
@@ -41,13 +41,13 @@ fn refuse(sh: &mut Shell, io: &mut Io, message: impl fmt::Display) -> i32 {
     status::SYNTAX_ERROR
 }
 
-/// Everything in `list` can run, or the first thing that can't yet (`pipelines (`|`)`).
-/// Checked before anything runs, so `echo a; echo b | c` fails as a whole
-/// instead of running half of it.
+/// Everything in `list` can run, or the message for the first thing that
+/// can't (`not supported yet: background jobs (`&`)`). Checked before anything
+/// runs, so `echo a; echo b &` fails as a whole instead of running half of it.
 fn check_supported(list: &List) -> Result<(), String> {
     for item in list {
         if item.background {
-            return Err("background jobs (`&`)".into());
+            return Err(not_yet("background jobs (`&`)"));
         }
         for p in item.and_or.pipelines() {
             for c in &p.commands {
@@ -64,14 +64,24 @@ fn check_supported(list: &List) -> Result<(), String> {
     Ok(())
 }
 
-/// `${x}` and `$?` can run; `${x:-default}` and friends can't yet.
+/// `${x}` and `$?` can run; `${x:-default}` and friends can't yet. A
+/// `$(...)` is parsed and checked like everything else.
 fn check_word(w: &Word) -> Result<(), String> {
     for part in &w.parts {
-        if let WordPart::Param { name, .. } = part
-            && name != "?"
-            && !is_valid_name(name)
-        {
-            return Err(format!("`${{{name}}}`"));
+        match part {
+            WordPart::Param { name, .. } if name != "?" && !is_valid_name(name) => {
+                return Err(not_yet(format!("`${{{name}}}`")));
+            }
+            WordPart::CommandSub { src, .. } if src.starts_with('(') => {
+                return Err(not_yet(format!("arithmetic (`$({src})`)")));
+            }
+            WordPart::CommandSub { src, .. } => {
+                let inside = |message| format!("{message}, inside `$({src})`");
+                let program = parser::parse(src)
+                    .map_err(|e| inside(format!("{}: {}", e.label(), e.describe(src))))?;
+                check_supported(&program)?;
+            }
+            _ => {}
         }
     }
     Ok(())
@@ -81,15 +91,19 @@ fn check_redirect(r: &Redirect) -> Result<(), String> {
     check_word(&r.target)?;
     if matches!(r.op, Op::DLess | Op::DLessDash) {
         // The body is the lines after the command; reading those comes later
-        return Err(format!("heredocs (`{r}`)"));
+        return Err(not_yet(format!("heredocs (`{r}`)")));
     }
     if r.fd.is_some_and(|fd| fd > 2) {
-        return Err(format!("file descriptors above 2 (`{r}`)"));
+        return Err(not_yet(format!("file descriptors above 2 (`{r}`)")));
     }
     if matches!(r.op, Op::GreatAnd | Op::LessAnd) && r.target.as_unquoted() == Some("-") {
-        return Err(format!("closing file descriptors (`{r}`)"));
+        return Err(not_yet(format!("closing file descriptors (`{r}`)")));
     }
     Ok(())
+}
+
+fn not_yet(what: impl fmt::Display) -> String {
+    format!("not supported yet: {what}")
 }
 
 /// Run each item in order and return the last status. An empty list (a blank
@@ -228,6 +242,8 @@ fn run_command(c: &Command, sh: &mut Shell, io: &mut Io) -> i32 {
 /// (left to right, so `x=1 y=$x` works). Before a program, they're only in its
 /// environment.
 fn simple(words: &[Word], sh: &mut Shell, io: &mut Io) -> i32 {
+    // POSIX: with no command, the status is the last `$(...)`'s, else 0
+    let substitutes = words.iter().any(Word::has_command_sub);
     let assignments: Vec<(String, Word)> = words.iter().map_while(Word::assignment).collect();
     let words = &words[assignments.len()..];
 
@@ -237,22 +253,22 @@ fn simple(words: &[Word], sh: &mut Shell, io: &mut Io) -> i32 {
         .iter()
         .flat_map(|w| match w.assignment() {
             Some((name, value)) if declares => {
-                vec![format!("{name}={}", expand::single(&value, sh))]
+                vec![format!("{name}={}", expand::single(&value, sh, io))]
             }
-            _ => expand::fields(w, sh),
+            _ => expand::fields(w, sh, io),
         })
         .collect();
 
     let Some(name) = argv.first() else {
         for (name, value) in &assignments {
-            let value = expand::single(value, sh);
+            let value = expand::single(value, sh, io);
             sh.set_var(name, value, false);
         }
-        return 0;
+        return if substitutes { sh.last_status } else { 0 };
     };
     let env: Vec<(String, String)> = assignments
         .into_iter()
-        .map(|(name, value)| (name, expand::single(&value, sh)))
+        .map(|(name, value)| (name, expand::single(&value, sh, io)))
         .collect();
 
     // Builtins first, then PATH

@@ -15,10 +15,10 @@ use crate::streams::{Io, Stream, describe_error};
 ///
 /// On failure the message (`missing: No such file or directory`) is returned and
 /// the command must not run.
-pub fn apply(redirects: &[Redirect], sh: &Shell, io: &Io) -> Result<Io, String> {
+pub fn apply(redirects: &[Redirect], sh: &mut Shell, io: &Io) -> Result<Io, String> {
     let mut io = io.try_clone().map_err(|e| describe_error(&e))?;
     for r in redirects {
-        let target = expand::single(&r.target, sh);
+        let target = expand::single(&r.target, sh, &mut io);
         let stream = match r.op {
             // `2>&1`: a copy of another stream, as it is right now
             Op::GreatAnd | Op::LessAnd => {

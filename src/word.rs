@@ -10,7 +10,7 @@ pub struct Word {
     pub parts: Vec<WordPart>,
 }
 
-/// Later steps add `CommandSub` ($(...)), `Arith` ($((...))) and `Tilde`.
+/// Later steps add `Arith` ($((...))).
 #[derive(Debug, Clone, PartialEq)]
 pub enum WordPart {
     Literal {
@@ -22,6 +22,12 @@ pub enum WordPart {
     Param {
         name: String,
         braced: bool,
+        quoted: bool,
+    },
+    /// `$(...)`: the commands inside, as text. Parsed (by the same parser as
+    /// everything else) when checked and when run.
+    CommandSub {
+        src: String,
         quoted: bool,
     },
 }
@@ -71,8 +77,16 @@ impl Word {
                     name, braced: true, ..
                 } => format!("${{{name}}}"),
                 WordPart::Param { name, .. } => format!("${name}"),
+                WordPart::CommandSub { src, .. } => format!("$({src})"),
             })
             .collect()
+    }
+
+    /// Has a `$(...)` in it, so expanding it runs commands.
+    pub fn has_command_sub(&self) -> bool {
+        self.parts
+            .iter()
+            .any(|p| matches!(p, WordPart::CommandSub { .. }))
     }
 
     /// `name=value` written plainly at the start: the name and the value as a

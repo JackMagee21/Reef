@@ -8,8 +8,8 @@ use std::fs::File;
 use std::io::{self, PipeReader, PipeWriter, Write};
 use std::process::Stdio;
 
-/// Where one of a command's streams is connected.
-/// Later steps add `Memory`, for `$(...)`.
+/// Where one of a command's streams is connected. `$(...)` needs no kind of
+/// its own: it captures output through a pipe.
 pub enum Stream {
     /// Reef's own stdin.
     Stdin,
