@@ -58,6 +58,7 @@ a'b'c   →   one Word:  [ "a" (unquoted), "b" (quoted), "c" (unquoted) ]
 | `'...'` | everything up to the next `'` is literal, no exceptions |
 | `"..."` | literal, except for `$x` forms, and `\` escaping `$`, `` ` ``, `"`, `\` and newline. Any other `\` stays as-is |
 | `$name`, `${...}`, `$?` | a `Param` part. `${` with no `}` is unfinished input. `$` before anything else is a plain character |
+| `$(...)` | a `CommandSub` part holding the text up to the **matching** `)` (quotes, `\`, nested parentheses and comments are stepped over). `$(` with no `)` is unfinished input |
 | `\` outside quotes | the next character is literal. `\` then newline joins the lines |
 | `\` at the very end | stays as a literal `\`, like `bash -c 'echo \'` |
 | `#` at the start of a word | the rest of the line is a comment, up to (not including) the newline. `a;#b` is `a`, `;` and a comment |
@@ -99,7 +100,7 @@ An unclosed quote, or `\` + newline at the very end, returns `LexError::Incomple
 
 ## What the lexer doesn't do yet (planned)
 
-- **More `$` forms:** `$(...)`, `$((...))`, and `$1`, `$#`, `$$`, `$@`. These become new kinds of `WordPart`.
+- **More `$` forms:** `$((...))`, backticks, and `$1`, `$#`, `$$`, `$@`. These become new kinds of `WordPart`.
 - **Quotes inside `${...}`:** `${x:-"a}"}` ends at the first `}`. Only matters once the `${...}` operators exist.
 - **Heredoc bodies:** `<<` and `<<-` are recognized, but reading the lines after them comes with the parser.
 - **Spans in lex errors:** `LexError::Incomplete` doesn't say where the unclosed quote started yet.

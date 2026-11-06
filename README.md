@@ -45,6 +45,7 @@ Point your terminal at Reef rather than changing your login shell: Reef can't ru
 - Commands and programs on `PATH` (with `PATHEXT` on Windows)
 - Quoting: `'...'`, `"..."`, `\`
 - Variables: `x=1`, `$x`, `${x}`, `$?`, `VAR=value program`, with field splitting like `sh`
+- Command substitution: `cd $(git rev-parse --show-toplevel)`, `x=$(ls | wc -l)`
 - Pipes: `ls | grep x | wc -l`
 - `~` and globs: `cd ~/src`, `ls *.rs`, `rm src/*/*.tmp`, `[a-z]`, `?`
 - `;`, `&&`, `||`, `!`, `{ ...; }` groups and `( ... )` subshells
@@ -56,7 +57,7 @@ Point your terminal at Reef rather than changing your login shell: Reef can't ru
 
 ## Not yet
 
-Background jobs (`&`), `$(...)`, heredocs, `if`/`for`/`while`/`case`, functions, running script files, tab completion. Anything not supported says so (`reef: not supported yet: ...`) instead of doing the wrong thing.
+Background jobs (`&`), backticks, heredocs, `if`/`for`/`while`/`case`, functions, running script files, tab completion. Anything not supported says so (`reef: not supported yet: ...`) instead of doing the wrong thing.
 
 ## More
 

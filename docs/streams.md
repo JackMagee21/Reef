@@ -16,7 +16,6 @@ A `Stream` is one of a fixed set of places, not "anything writable". The reason:
 |---|---|---|
 | `Stdin`, `Stdout`, `Stderr` | Reef's own three console streams | built |
 | `File` | an open file, from `> out.txt`, `>> log`, `< in.txt`. `/dev/null` is a `File` too: the OS's null device | built |
-| `Memory` | bytes in memory, for builtin tests and `$(...)` | planned |
 | `PipeIn` / `PipeOut` | the two ends of a pipe between commands, from `std::io::pipe()` | built |
 
 Reef's own stdout and stderr are separate kinds, not one "terminal" kind. With `2>&1`, stderr becomes a copy of stdout. If both were just "the terminal", the copy couldn't know it should follow stdout when Reef's own output is redirected.

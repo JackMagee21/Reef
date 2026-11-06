@@ -2,7 +2,7 @@
 
 `src/expand.rs` turns a `Word` into the strings a command gets. The lexer has already split `$x`, `${x}` and `$?` out as `WordPart::Param`, each remembering whether it was quoted.
 
-The steps, in order: `~` → `$x` → field splitting → globs. Quoted text skips splitting and globs.
+The steps, in order: `~` → `$x` and `$(...)` → field splitting → globs. Quoted text skips splitting and globs.
 
 ## `~`
 
@@ -60,6 +60,27 @@ After splitting, a field with an **unquoted** `*`, `?` or `[` is a pattern, matc
 
 `[[:alpha:]]` classes and names that aren't valid UTF-8 are **planned**.
 
+## `$(...)`, command substitution
+
+`$(cmd)` runs `cmd` and is replaced by what it printed, minus **every** trailing newline (and `\r`, for Windows programs):
+
+| Input | Gets |
+|---|---|
+| `echo "[$(echo hi)]"` | `[hi]` |
+| `x=$(ls \| wc -l)` | the count, in `x` |
+| `echo $(echo 'a  b')` | `a b`: unquoted, it's split (and globbed) like `$x` |
+| `echo "$(echo 'a  b')"` | `a  b`: quoted, it's one argument, untouched |
+
+- It runs in a **copy** of the shell, like `( )`: `cd`, `x=1` and `exit` inside don't leak out.
+- Only its stdout is captured. Its errors still reach the screen, and its stdin is the command's.
+- With no command left, the status is the substitution's: `x=$(false); echo $?` prints `1`. A later `$?` in the same line sees it too.
+- The end is the **matching** `)`: quotes, `\`, nested `( )` and `$( )` and comments are stepped over, so `$(echo ")")` works. An unclosed `$(` is unfinished input: the prompt waits for the next line.
+- What's inside is parsed and checked with everything else before anything runs: `echo a; echo $(while x)` prints only the error.
+
+How it runs (`expand::substitute`): a pipe, the commands on a thread writing into it, and Reef reading the other end *while they run*. A pipe holds about 64 KB, so reading only after they finished would hang on bigger output.
+
+Backticks (`` `cmd` ``), the older form, are **planned**; until then a backtick is a plain character. `$((...))` arithmetic is refused as not supported yet.
+
 ## Assignments
 
 A word like `name=value` at the start of a simple command is an assignment, if `name` is written plainly (`'x'=1` and `"x=1"` are ordinary words).
@@ -76,4 +97,4 @@ Variables live in `Shell` (see [architecture.md](architecture.md)). Subshells `(
 
 ## Planned
 
-`~user`, `[[:class:]]` in globs, `$(...)`, `$((...))`, the `${...}` operators, positional arguments, and `$IFS`.
+`~user`, `[[:class:]]` in globs, backticks, `$((...))`, the `${...}` operators, positional arguments, and `$IFS`.
