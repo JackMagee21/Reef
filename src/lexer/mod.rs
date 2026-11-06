@@ -1,8 +1,8 @@
 //! Turns a line of text into tokens: words (following POSIX quoting rules)
 //! and operators, each with its span.
 //!
-//! `$x`, `${x}` and `$?` become `WordPart::Param`; `$(...)`, `$((...))` and
-//! heredoc bodies come in later slices.
+//! `$x`, `${x}` and `$?` become `WordPart::Param`, `$(...)` becomes
+//! `WordPart::CommandSub`; `$((...))` and heredoc bodies come in later slices.
 
 mod token;
 
@@ -168,7 +168,8 @@ fn read_double_quoted(chars: &mut Peekable<CharIndices>, word: &mut Word) -> Res
 }
 
 /// What follows a `$`, added to `word`: `name`, `{anything}` or `?` become a
-/// `Param`; before anything else the `$` is just a character (`echo $`, `a$ b`).
+/// `Param`, `(...)` a `CommandSub`; before anything else the `$` is just a
+/// character (`echo $`, `a$ b`).
 // shortcut: `$1`, `$#`, `$$`, `$@` stay literal; add them with positional arguments
 fn read_dollar(
     chars: &mut Peekable<CharIndices>,
@@ -184,6 +185,12 @@ fn read_dollar(
         Ok(())
     };
     match chars.peek() {
+        Some((_, '(')) => {
+            chars.next();
+            let src = read_command_sub(chars)?;
+            word.parts.push(WordPart::CommandSub { src, quoted });
+            Ok(())
+        }
         Some((_, '{')) => {
             chars.next();
             let mut name = String::new();
@@ -212,6 +219,73 @@ fn read_dollar(
             Ok(())
         }
     }
+}
+
+/// The text of `$( ... )` after the `$(`, up to its matching `)`. Quotes, `\`,
+/// nested `( )` and comments are stepped over, so `$(echo ")")` ends in the
+/// right place. Parsing the text is left to the parser, later.
+// shortcut: a `case` pattern's lone `)` would end it early; revisit with `case`
+fn read_command_sub(chars: &mut Peekable<CharIndices>) -> Result<String, LexError> {
+    let mut src = String::new();
+    let mut depth = 0;
+    while let Some((_, c)) = chars.next() {
+        match c {
+            ')' if depth == 0 => return Ok(src),
+            ')' => depth -= 1,
+            '(' => depth += 1,
+            '\'' | '"' => {
+                copy_quoted(chars, c, &mut src)?;
+                continue;
+            }
+            '\\' => {
+                src.push(c);
+                if let Some((_, escaped)) = chars.next() {
+                    src.push(escaped);
+                }
+                continue;
+            }
+            // A comment can hold a `)`: `$(cmd # why)` + newline + `)`
+            '#' if src.is_empty() || src.ends_with(char::is_whitespace) => {
+                src.push(c);
+                while let Some((_, c)) = chars.next_if(|&(_, c)| c != '\n') {
+                    src.push(c);
+                }
+                continue;
+            }
+            _ => {}
+        }
+        src.push(c);
+    }
+    Err(LexError::Incomplete("unclosed $("))
+}
+
+/// A quoted piece inside `$( )`, from its opening `quote` to its closing one,
+/// copied into `src` unchanged. Inside `"..."`, `\` and a nested `$( )` are
+/// stepped over too.
+fn copy_quoted(
+    chars: &mut Peekable<CharIndices>,
+    quote: char,
+    src: &mut String,
+) -> Result<(), LexError> {
+    src.push(quote);
+    while let Some((_, c)) = chars.next() {
+        src.push(c);
+        if c == quote {
+            return Ok(());
+        }
+        if quote == '"' && c == '\\' {
+            src.extend(chars.next().map(|(_, escaped)| escaped));
+        } else if quote == '"' && c == '$' && chars.next_if(|&(_, n)| n == '(').is_some() {
+            src.push('(');
+            src.push_str(&read_command_sub(chars)?);
+            src.push(')');
+        }
+    }
+    Err(LexError::Incomplete(if quote == '"' {
+        "unclosed \""
+    } else {
+        "unclosed '"
+    }))
 }
 
 /// The longest operator starting with `c`: `>>` is one operator, not two `>`.
