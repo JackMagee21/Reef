@@ -295,6 +295,8 @@ mod tests {
         assert!(incomplete("echo 'a"));
         assert!(incomplete("echo a \\"));
         assert!(incomplete("echo a &&\n"));
+        assert!(incomplete("echo $(echo a"));
+        assert!(incomplete("echo \"$(echo ')'"));
         // complete, or wrong (an error is reported, not waited on)
         assert!(!incomplete("echo a"));
         assert!(!incomplete("echo a && echo b"));
