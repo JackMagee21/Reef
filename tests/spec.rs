@@ -633,6 +633,124 @@ fn update_refuses_a_reef_that_cargo_install_didnt_put_there() {
     );
 }
 
+/// A copy of reef installed the way `cargo install --root <dir>` lays it
+/// out (`<dir>/bin/reef`), so `--update` and `--rollback` accept it.
+fn installed_copy(name: &str) -> PathBuf {
+    let bin = temp_dir(name).join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let exe = bin.join(format!("reef{}", std::env::consts::EXE_SUFFIX));
+    std::fs::copy(env!("CARGO_BIN_EXE_reef"), &exe).unwrap();
+    exe
+}
+
+#[test]
+fn rollback_swaps_with_the_previous_version_and_back() {
+    let exe = installed_copy("reef_rollback");
+    let previous = exe.with_file_name(format!("reef.previous{}", std::env::consts::EXE_SUFFIX));
+    // Another real reef, told apart by bytes on the end (it still runs)
+    let now = std::fs::read(&exe).unwrap();
+    let before = [now.as_slice(), b"previous"].concat();
+    std::fs::write(&previous, &before).unwrap();
+    std::fs::set_permissions(&previous, std::fs::metadata(&exe).unwrap().permissions()).unwrap();
+
+    let out = Command::new(&exe).arg("--rollback").output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("switched back"));
+    assert_eq!(std::fs::read(&exe).unwrap(), before);
+    assert_eq!(std::fs::read(&previous).unwrap(), now);
+    // the spare name used for the swap is gone
+    assert_eq!(std::fs::read_dir(exe.parent().unwrap()).unwrap().count(), 2);
+
+    // `reef --rollback` again, now running the previous version: forward again
+    let out = Command::new(&exe).arg("--rollback").output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert_eq!(std::fs::read(&exe).unwrap(), now);
+    assert_eq!(std::fs::read(&previous).unwrap(), before);
+
+    // Run as `reef.previous` itself there's nothing to swap with: refused, nothing lost
+    let out = Command::new(&previous).arg("--rollback").output().unwrap();
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert_eq!(std::fs::read(&exe).unwrap(), now);
+    assert_eq!(std::fs::read(&previous).unwrap(), before);
+}
+
+/// `reef --update` run with fake `git` (one release, `release`) and `cargo`
+/// (runs `cargo_script` with the install folder as `$root`) first on PATH.
+#[cfg(unix)]
+fn update_with_fakes(exe: &Path, release: &str, cargo_script: &str) -> Output {
+    use std::os::unix::fs::PermissionsExt;
+    let fakes = exe.parent().unwrap().parent().unwrap().join("fakes");
+    std::fs::create_dir_all(&fakes).unwrap();
+    for (name, body) in [
+        ("git", format!("printf 'abc123\\trefs/tags/v{release}\\n'")),
+        ("cargo", format!("for a; do root=$a; done\n{cargo_script}")),
+    ] {
+        let path = fakes.join(name);
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let path = format!("{}:/usr/bin:/bin", fakes.display());
+    Command::new(exe)
+        .arg("--update")
+        .env("PATH", path)
+        .output()
+        .unwrap()
+}
+
+#[test]
+#[cfg(unix)]
+fn update_keeps_the_replaced_version_for_rollback() {
+    let exe = installed_copy("reef_update_backup");
+    let now = std::fs::read(&exe).unwrap();
+    let out = update_with_fakes(
+        &exe,
+        "99.0.0",
+        r#"printf new > "$root/new" && mv "$root/new" "$root/bin/reef""#,
+    );
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("updated to reef 99.0.0"));
+    assert_eq!(std::fs::read(&exe).unwrap(), b"new");
+    assert_eq!(
+        std::fs::read(exe.with_file_name("reef.previous")).unwrap(),
+        now
+    );
+    assert!(!exe.with_file_name("reef.previous.pending").exists());
+}
+
+#[test]
+#[cfg(unix)]
+fn a_failed_update_leaves_the_old_backup_alone() {
+    let exe = installed_copy("reef_update_fails");
+    let previous = exe.with_file_name("reef.previous");
+    std::fs::write(&previous, "older").unwrap();
+    let out = update_with_fakes(&exe, "99.0.0", "exit 101");
+    assert_eq!(out.status.code(), Some(101), "{out:?}");
+    assert_eq!(std::fs::read(&previous).unwrap(), b"older");
+    assert!(exe.is_file());
+    assert!(!exe.with_file_name("reef.previous.pending").exists());
+}
+
+#[test]
+#[cfg(unix)]
+fn update_never_installs_an_older_release() {
+    let exe = installed_copy("reef_update_older");
+    // cargo would fail loudly if it were run at all
+    let out = update_with_fakes(&exe, "0.0.1", "exit 101");
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("nothing to do"));
+    assert!(!exe.with_file_name("reef.previous").exists());
+}
+
+#[test]
+fn rollback_without_a_previous_version_changes_nothing() {
+    let exe = installed_copy("reef_rollback_none");
+    let out = Command::new(&exe).arg("--rollback").output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("no previous version"), "{stderr}");
+    assert!(exe.is_file());
+}
+
 #[test]
 fn variables_carry_over_between_piped_lines() {
     piped("x=piped\necho \"$x ${x}\"\n")

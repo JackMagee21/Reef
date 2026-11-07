@@ -1,6 +1,7 @@
 //! `reef --update`: reinstall the newest Reef release from GitHub with cargo,
 //! into the same place the running one was installed. `reef --check-update`:
-//! say whether that would change anything.
+//! say whether that would change anything. `reef --rollback`: go back to the
+//! version the last update replaced.
 //!
 //! Only releases (tags like `v0.4.0`) are ever installed, never whatever was
 //! pushed last, and never an older version than the one running. Builds use
@@ -23,31 +24,52 @@ fn running() -> Version {
     parse_version(env!("CARGO_PKG_VERSION")).unwrap_or((0, 0, 0))
 }
 
-/// Returns Reef's exit status. Cargo itself prints the progress, and skips
-/// the build when the installed copy is already that release.
+/// Returns Reef's exit status. Cargo itself prints the progress.
+///
+/// The reef being replaced is kept as `reef.previous` for `--rollback`, but
+/// only once the new one is in: a failed update leaves the old backup alone.
 pub fn run() -> i32 {
     let fail = |message: &str| fail("--update", message);
     let (exe, root) = match installed() {
         Ok(found) => found,
         Err(message) => return fail(&message),
     };
-    let (version, _) = match newest_release() {
+    let (version, commit) = match newest_release() {
         Ok(release) => release,
         Err(message) => return fail(&message),
     };
+    let current = env!("CARGO_PKG_VERSION");
     // A release older than this one is never "newer", even if it's the newest tag
     if version < running() {
         println!(
-            "reef {} is newer than the newest release ({}); nothing to do",
-            env!("CARGO_PKG_VERSION"),
+            "reef {current} is newer than the newest release ({}); nothing to do",
             show(version)
         );
         return 0;
+    }
+    // Already have it: stop here, so the backup still holds the version before
+    if version == running() && installed_commit(&crates_list(&root)) == Some(commit) {
+        println!("reef {current} is already the newest release");
+        return 0;
+    }
+
+    // A copy of this reef, made before anything changes
+    let backup = backup_path(&exe);
+    let pending = exe.with_file_name(format!(
+        "reef.previous.pending{}",
+        std::env::consts::EXE_SUFFIX
+    ));
+    if let Err(e) = std::fs::copy(&exe, &pending) {
+        return fail(&format!(
+            "can't keep a copy of this reef to roll back to ({}), so not updating",
+            describe_error(&e)
+        ));
     }
 
     let moved = match platform::move_aside_running_exe(&exe) {
         Ok(moved) => moved,
         Err(e) => {
+            let _ = std::fs::remove_file(&pending);
             return fail(&format!(
                 "can't replace {}: {}",
                 exe.display(),
@@ -59,6 +81,9 @@ pub fn run() -> i32 {
         .args([
             "install",
             "--locked",
+            // This code already decided to install, e.g. after a rollback,
+            // when cargo's own list says the release is in place
+            "--force",
             "--git",
             REPO,
             "--tag",
@@ -70,7 +95,19 @@ pub fn run() -> i32 {
         .env("GIT_TERMINAL_PROMPT", "0")
         .status();
     let code = match result {
-        Ok(s) if s.success() => return 0,
+        Ok(s) if s.success() => {
+            if let Err(e) = std::fs::rename(&pending, &backup) {
+                eprintln!(
+                    "reef: --update: updated, but couldn't keep the old version for --rollback: {}",
+                    describe_error(&e)
+                );
+            }
+            println!(
+                "updated to reef {}; `reef --rollback` goes back to {current}",
+                show(version)
+            );
+            return 0;
+        }
         Ok(s) => platform::exit_status(s),
         Err(e) => fail(&format!(
             "can't run cargo ({}); install Rust from https://rustup.rs",
@@ -84,30 +121,86 @@ pub fn run() -> i32 {
     {
         eprintln!("reef: --update: couldn't restore {}: {e}", exe.display());
     }
+    let _ = std::fs::remove_file(&pending);
     code
 }
 
-/// `reef --check-update`: compares the commit cargo installed with the newest
-/// release's. Status 0 when up to date, 1 when there's an update or it
-/// couldn't tell (and says why).
+/// `reef --rollback`: swap this reef with the one the last update replaced.
+/// Swapping, not deleting, so running it again goes forward again.
+pub fn rollback() -> i32 {
+    let fail = |message: &str| fail("--rollback", message);
+    let (exe, _) = match installed() {
+        Ok(found) => found,
+        Err(message) => return fail(&message),
+    };
+    let backup = backup_path(&exe);
+    if exe == backup {
+        return fail(
+            "this is the previous version already; run `reef --rollback` with the normal `reef`",
+        );
+    }
+    if !backup.is_file() {
+        return fail(
+            "there's no previous version to go back to; `reef --update` keeps one each time it installs a new release",
+        );
+    }
+    // Three renames through a spare name, each undone if a later one fails
+    let spare = exe.with_file_name(format!("reef.swap{}", std::env::consts::EXE_SUFFIX));
+    let rename = |from: &Path, to: &Path| {
+        std::fs::rename(from, to)
+            .map_err(|e| format!("can't move {}: {}", from.display(), describe_error(&e)))
+    };
+    if let Err(message) = rename(&exe, &spare) {
+        return fail(&message);
+    }
+    if let Err(message) = rename(&backup, &exe) {
+        let _ = std::fs::rename(&spare, &exe);
+        return fail(&message);
+    }
+    if let Err(message) = rename(&spare, &backup) {
+        // The previous reef is in place; this one is still safe under the spare name
+        return fail(&format!(
+            "{message}; this version is kept as {}",
+            spare.display()
+        ));
+    }
+    println!(
+        "switched back from reef {} to the previous version; open a new reef to use it. \
+         `reef --rollback` again switches forward",
+        env!("CARGO_PKG_VERSION")
+    );
+    0
+}
+
+/// Where `--update` keeps the reef it replaced: `reef.previous` next to `reef`.
+fn backup_path(exe: &Path) -> PathBuf {
+    exe.with_file_name(format!("reef.previous{}", std::env::consts::EXE_SUFFIX))
+}
+
+/// `reef --check-update`: is there a release newer than this reef? Status 0
+/// when up to date, 1 when there's an update or it couldn't tell (and says why).
 pub fn check() -> i32 {
     let fail = |message: &str| fail("--check-update", message);
     let root = match installed() {
         Ok((_, root)) => root,
         Err(message) => return fail(&message),
     };
-    let crates = std::fs::read_to_string(root.join(".crates.toml")).unwrap_or_default();
-    let Some(have) = installed_commit(&crates) else {
-        return fail(
-            "this reef wasn't installed from GitHub, so there's no commit to compare; `reef --update` installs the newest release",
-        );
-    };
     let (version, commit) = match newest_release() {
         Ok(release) => release,
         Err(message) => return fail(&message),
     };
     let current = env!("CARGO_PKG_VERSION");
-    if have == commit || version < running() {
+    // The version decides; the commit only matters between builds of one version
+    // (cargo's list can be stale after `--rollback`, so it can't decide alone)
+    let up_to_date = match version.cmp(&running()) {
+        std::cmp::Ordering::Less => true,
+        std::cmp::Ordering::Greater => false,
+        // Built from a local folder: no commit to compare, and the same version
+        std::cmp::Ordering::Equal => {
+            installed_commit(&crates_list(&root)).is_none_or(|have| have == commit)
+        }
+    };
+    if up_to_date {
         println!(
             "reef {current} is up to date (newest release: {})",
             show(version)
@@ -120,6 +213,11 @@ pub fn check() -> i32 {
         );
         1
     }
+}
+
+/// Cargo's list of what it installed under `root`; empty if there isn't one.
+fn crates_list(root: &Path) -> String {
+    std::fs::read_to_string(root.join(".crates.toml")).unwrap_or_default()
 }
 
 /// The running reef and the folder `cargo install --root` put it in (it lives in `<root>/bin`).

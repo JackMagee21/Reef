@@ -40,13 +40,16 @@ fn main() {
         }
         (Some("--update"), _) => update::run(),
         (Some("--check-update"), _) => update::check(),
+        (Some("--rollback"), _) => update::rollback(),
         (Some("-c"), Some(src)) => exec::run_source(src, &mut sh, &mut io),
         (Some("-c"), None) => {
             eprintln!("reef: -c: option requires an argument");
             status::SYNTAX_ERROR
         }
         (Some(_), _) => {
-            eprintln!("usage: reef [-c <command> | --version | --update | --check-update]");
+            eprintln!(
+                "usage: reef [-c <command> | --version | --update | --check-update | --rollback]"
+            );
             status::SYNTAX_ERROR
         }
     };
