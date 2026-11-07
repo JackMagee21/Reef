@@ -19,13 +19,37 @@ pub fn find_command(name: &str, sh: &Shell) -> Option<PathBuf> {
         let path = sh.cwd().join(name);
         return path.exists().then_some(path);
     }
-    let is_exec = |p: &PathBuf| {
-        p.metadata()
-            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-    };
     std::env::split_paths(sh.var("PATH").unwrap_or(DEFAULT_PATH))
         .map(|dir| sh.cwd().join(dir).join(name))
-        .find(is_exec)
+        .find(|p| is_exec(p))
+}
+
+/// The programs on `PATH` whose names start with `prefix`, for tab completion.
+/// The same rules as `find_command`, so whatever it offers will run.
+/// Unsorted, and a name in two folders appears twice.
+pub fn commands_starting_with(prefix: &str, sh: &Shell) -> Vec<String> {
+    let mut names = Vec::new();
+    for dir in std::env::split_paths(sh.var("PATH").unwrap_or(DEFAULT_PATH)) {
+        let Ok(entries) = std::fs::read_dir(sh.cwd().join(dir)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            // Names that aren't UTF-8 can't be typed into the line anyway
+            if let Ok(name) = entry.file_name().into_string()
+                && name.starts_with(prefix)
+                && is_exec(&entry.path())
+            {
+                names.push(name);
+            }
+        }
+    }
+    names
+}
+
+/// A file with any execute bit set. Follows symlinks, like running it would.
+fn is_exec(p: &Path) -> bool {
+    p.metadata()
+        .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }
 
 /// Searched when `PATH` is unset. Not empty: an empty `PATH` means the current

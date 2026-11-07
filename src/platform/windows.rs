@@ -8,13 +8,7 @@ use crate::shell::Shell;
 /// Find a command the way cmd.exe does: try each `PATHEXT` extension.
 /// A name containing a path separator is resolved against `sh.cwd` instead of `PATH`.
 pub fn find_command(name: &str, sh: &Shell) -> Option<PathBuf> {
-    let exts: Vec<String> = sh
-        .var("PATHEXT")
-        .unwrap_or(".COM;.EXE;.BAT;.CMD")
-        .split(';')
-        .filter(|e| !e.is_empty())
-        .map(|e| e.to_ascii_lowercase())
-        .collect();
+    let exts = path_exts(sh);
 
     let try_exts = |base: PathBuf| -> Option<PathBuf> {
         // `git.exe` typed in full: use it as-is
@@ -41,6 +35,44 @@ pub fn find_command(name: &str, sh: &Shell) -> Option<PathBuf> {
     std::env::split_paths(sh.var("PATH").unwrap_or_default())
         .filter(|dir| !dir.as_os_str().is_empty())
         .find_map(|dir| try_exts(sh.cwd().join(dir).join(name)))
+}
+
+/// The extensions that make a file runnable, lowercase with their dot: `.exe`.
+fn path_exts(sh: &Shell) -> Vec<String> {
+    sh.var("PATHEXT")
+        .unwrap_or(".COM;.EXE;.BAT;.CMD")
+        .split(';')
+        .filter(|e| !e.is_empty())
+        .map(|e| e.to_ascii_lowercase())
+        .collect()
+}
+
+/// The programs on `PATH` whose names start with `prefix` (any case), for tab
+/// completion. Offered without their extension, `git` for `git.exe`, which
+/// `find_command` finds again. Unsorted, and may hold duplicates.
+pub fn commands_starting_with(prefix: &str, sh: &Shell) -> Vec<String> {
+    let exts = path_exts(sh);
+    let prefix = prefix.to_lowercase();
+    let mut names = Vec::new();
+    let path = sh.var("PATH").unwrap_or_default();
+    for dir in std::env::split_paths(path).filter(|d| !d.as_os_str().is_empty()) {
+        let Ok(entries) = std::fs::read_dir(sh.cwd().join(dir)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(name) = entry.file_name().into_string() else {
+                continue;
+            };
+            if let Some((stem, ext)) = name.rsplit_once('.')
+                && exts.contains(&format!(".{}", ext.to_ascii_lowercase()))
+                && stem.to_lowercase().starts_with(&prefix)
+                && entry.path().is_file()
+            {
+                names.push(stem.to_string());
+            }
+        }
+    }
+    names
 }
 
 /// Turn a child's exit code into a shell status (`$?`), always 0-255.

@@ -45,6 +45,11 @@ fn not_yet(_: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
     status::SYNTAX_ERROR
 }
 
+/// Every builtin's name, for tab completion.
+pub fn names() -> impl Iterator<Item = &'static str> {
+    BUILTINS.iter().map(|&(name, _)| name)
+}
+
 pub fn lookup(name: &str) -> Option<Builtin> {
     BUILTINS.iter().find(|(n, _)| *n == name).map(|&(_, f)| f)
 }
