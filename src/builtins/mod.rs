@@ -9,6 +9,7 @@ mod type_cmd;
 mod unset;
 
 use crate::shell::Shell;
+use crate::status;
 use crate::streams::Io;
 
 pub type Builtin = fn(&mut Shell, &[String], &mut Io) -> i32;
@@ -23,7 +24,26 @@ const BUILTINS: &[(&str, Builtin)] = &[
     ("true", true_cmd::true_cmd),
     ("type", type_cmd::type_cmd),
     ("unset", unset::unset),
+    // Only work inside a shell. Fedora ships each as a program too
+    // (`/usr/bin/alias` runs `builtin alias "$@"` in a throwaway `sh`), which
+    // would do nothing and report success. Refusing beats silently doing nothing.
+    ("alias", not_yet),
+    ("bg", not_yet),
+    ("fc", not_yet),
+    ("fg", not_yet),
+    ("getopts", not_yet),
+    ("hash", not_yet),
+    ("jobs", not_yet),
+    ("read", not_yet),
+    ("ulimit", not_yet),
+    ("umask", not_yet),
+    ("unalias", not_yet),
 ];
+
+fn not_yet(_: &mut Shell, argv: &[String], io: &mut Io) -> i32 {
+    io.error(format_args!("not supported yet: `{}`", argv[0]));
+    status::SYNTAX_ERROR
+}
 
 pub fn lookup(name: &str) -> Option<Builtin> {
     BUILTINS.iter().find(|(n, _)| *n == name).map(|&(_, f)| f)

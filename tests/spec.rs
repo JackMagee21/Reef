@@ -260,12 +260,12 @@ const ERRORS: &[(&str, &str, i32)] = &[
     ),
     (
         "echo 'a",
-        "reef: syntax error: unexpected end of input: unclosed '\n",
+        "reef: syntax error: unexpected end of input: unclosed '\n  echo 'a\n         ^\n",
         2,
     ),
     (
         "echo \"a",
-        "reef: syntax error: unexpected end of input: unclosed \"\n",
+        "reef: syntax error: unexpected end of input: unclosed \"\n  echo \"a\n         ^\n",
         2,
     ),
     (
@@ -334,56 +334,56 @@ const ERRORS: &[(&str, &str, i32)] = &[
     ),
     (
         "if true; then echo; fi",
-        "reef: not supported yet: `if` (column 1)\n",
+        "reef: not supported yet: `if`\n  if true; then echo; fi\n  ^^\n",
         2,
     ),
-    // Syntax errors point at the column
+    // Syntax errors show the line with a `^` under the spot
     (
         "echo a;;",
-        "reef: syntax error: unexpected `;;` (column 7)\n",
+        "reef: syntax error: unexpected `;;`\n  echo a;;\n        ^^\n",
         2,
     ),
     (
         "; echo a",
-        "reef: syntax error: unexpected `;` (column 1)\n",
+        "reef: syntax error: unexpected `;`\n  ; echo a\n  ^\n",
         2,
     ),
     (
         "echo é )",
-        "reef: syntax error: unexpected `)` (column 8)\n",
+        "reef: syntax error: unexpected `)`\n  echo é )\n         ^\n",
         2,
     ),
-    ("}", "reef: syntax error: unexpected `}` (column 1)\n", 2),
-    ("( )", "reef: syntax error: unexpected `)` (column 3)\n", 2),
+    ("}", "reef: syntax error: unexpected `}`\n  }\n  ^\n", 2),
+    ("( )", "reef: syntax error: unexpected `)`\n  ( )\n    ^\n", 2),
     (
         "echo >",
-        "reef: syntax error: `>` needs a file name after it (column 6)\n",
+        "reef: syntax error: `>` needs a file name after it\n  echo >\n       ^\n",
         2,
     ),
     (
         "echo > ; x",
-        "reef: syntax error: `>` needs a file name after it (column 6)\n",
+        "reef: syntax error: `>` needs a file name after it\n  echo > ; x\n       ^\n",
         2,
     ),
     // Unfinished input: an error with -c, more lines in piped mode and at the prompt
     (
         "echo a &&",
-        "reef: syntax error: unexpected end of input: `&&` needs a command after it\n",
+        "reef: syntax error: unexpected end of input: `&&` needs a command after it\n  echo a &&\n           ^\n",
         2,
     ),
     (
         "echo a |",
-        "reef: syntax error: unexpected end of input: `|` needs a command after it\n",
+        "reef: syntax error: unexpected end of input: `|` needs a command after it\n  echo a |\n          ^\n",
         2,
     ),
     (
         "{ echo a;",
-        "reef: syntax error: unexpected end of input: `{` is missing its `}`\n",
+        "reef: syntax error: unexpected end of input: `{` is missing its `}`\n  { echo a;\n           ^\n",
         2,
     ),
     (
         "(echo a",
-        "reef: syntax error: unexpected end of input: `(` is missing its `)`\n",
+        "reef: syntax error: unexpected end of input: `(` is missing its `)`\n  (echo a\n         ^\n",
         2,
     ),
     (
@@ -393,11 +393,15 @@ const ERRORS: &[(&str, &str, i32)] = &[
         1,
     ),
     ("unset -f", "reef: unset: `-f': not a valid identifier\n", 1),
+    // Shell-only commands refuse instead of running a program that does nothing
+    ("alias ll='ls -la'", "reef: not supported yet: `alias`\n", 2),
+    ("echo a | read x", "reef: not supported yet: `read`\n", 2),
+    ("jobs", "reef: not supported yet: `jobs`\n", 2),
     ("echo ${x:-y}", "reef: not supported yet: `${x:-y}`\n", 2),
     ("echo hi > ${}", "reef: not supported yet: `${}`\n", 2),
     (
         "echo ${x",
-        "reef: syntax error: unexpected end of input: unclosed ${\n",
+        "reef: syntax error: unexpected end of input: unclosed ${\n  echo ${x\n          ^\n",
         2,
     ),
     (
@@ -437,19 +441,19 @@ const ERRORS: &[(&str, &str, i32)] = &[
     ),
     (
         "echo $(echo hi",
-        "reef: syntax error: unexpected end of input: unclosed $(\n",
+        "reef: syntax error: unexpected end of input: unclosed $(\n  echo $(echo hi\n                ^\n",
         2,
     ),
     // checked before anything runs, inside too
     (
         "echo first; echo $(echo &&)",
         "reef: syntax error: unexpected end of input: `&&` needs a command after it, \
-         inside `$(echo &&)`\n",
+         inside `$(echo &&)`\n  echo &&\n         ^\n",
         2,
     ),
     (
         "echo $(while x)",
-        "reef: not supported yet: `while` (column 1), inside `$(while x)`\n",
+        "reef: not supported yet: `while`, inside `$(while x)`\n  while x\n  ^^^^^\n",
         2,
     ),
     (
