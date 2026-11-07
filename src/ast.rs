@@ -12,7 +12,7 @@
 
 use std::fmt;
 
-use crate::lexer::Op;
+use crate::lexer::{Op, Span};
 use crate::word::Word;
 
 /// Commands separated by `;`, `&` or newlines, run one after another.
@@ -20,8 +20,8 @@ pub type List = Vec<Item>;
 
 pub struct Item {
     pub and_or: AndOr,
-    /// Ended with `&`: run in the background.
-    pub background: bool,
+    /// Where its `&` is, if it ended with one (run in the background).
+    pub background: Option<Span>,
 }
 
 /// `a && b || c`: pipelines joined by `&&` / `||`, evaluated left to right.
@@ -107,6 +107,8 @@ pub struct Redirect {
     pub op: Op,
     /// The file, the fd to copy (`&1`), or the heredoc's end marker.
     pub target: Word,
+    /// All of it as typed, from the `2` (or the operator) to the end of the target.
+    pub span: Span,
 }
 
 /// Written back compactly, for messages: `2>&1`, `>out`.

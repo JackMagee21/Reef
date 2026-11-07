@@ -47,11 +47,7 @@ impl ParseError {
             ParseError::Syntax { message, .. } => message,
             ParseError::NotYet { what, .. } => what,
         };
-        let start = src.floor_char_boundary(self.span(src).start);
-        match src[..start].matches('\n').count() + 1 {
-            1 => what.to_string(),
-            line => format!("{what} (line {line})"),
-        }
+        format!("{what}{}", line_note(src, self.span(src)))
     }
 
     /// The line it went wrong on, with a `^` under the spot.
@@ -69,6 +65,15 @@ impl ParseError {
             }
             ParseError::Syntax { span, .. } | ParseError::NotYet { span, .. } => *span,
         }
+    }
+}
+
+/// ` (line 2)` when `span` isn't on the first line of `src`, else nothing.
+pub fn line_note(src: &str, span: Span) -> String {
+    let start = src.floor_char_boundary(span.start);
+    match src[..start].matches('\n').count() + 1 {
+        1 => String::new(),
+        line => format!(" (line {line})"),
     }
 }
 
@@ -154,14 +159,14 @@ impl Parser<'_> {
             let background = match self.peek_op() {
                 Some(Op::Amp) => {
                     self.pos += 1;
-                    true
+                    Some(self.tokens[self.pos - 1].span)
                 }
                 Some(Op::Semi | Op::Newline) => {
                     self.pos += 1;
-                    false
+                    None
                 }
                 // The end, `)` or `}`: the top of the loop decides if that's allowed
-                _ if self.peek().is_none() || self.peek_closer().is_some() => false,
+                _ if self.peek().is_none() || self.peek_closer().is_some() => None,
                 _ => return self.unexpected(),
             };
             items.push(Item { and_or, background });
@@ -264,6 +269,7 @@ impl Parser<'_> {
     }
 
     fn redirect(&mut self) -> Result<Redirect, ParseError> {
+        let start = self.peek().map_or(0, |t| t.span.start);
         let fd = match self.peek().map(|t| &t.kind) {
             Some(&TokenKind::IoNumber(n)) => {
                 self.pos += 1;
@@ -284,7 +290,16 @@ impl Parser<'_> {
             Some(TokenKind::Word(target)) => {
                 let target = target.clone();
                 self.pos += 1;
-                Ok(Redirect { fd, op, target })
+                let span = Span {
+                    start,
+                    end: target.span.end,
+                };
+                Ok(Redirect {
+                    fd,
+                    op,
+                    target,
+                    span,
+                })
             }
             _ => Err(syntax(
                 format!("`{}` needs a file name after it", op.as_str()),
@@ -402,7 +417,7 @@ mod tests {
                 format!(
                     "{}{}",
                     and_or(&i.and_or),
-                    if i.background { " &" } else { "" }
+                    if i.background.is_some() { " &" } else { "" }
                 )
             })
             .collect();
@@ -540,6 +555,21 @@ mod tests {
             err("a &&\n"),
             "unexpected end of input: `&&` needs a command after it\n  a &&\n      ^"
         );
+    }
+
+    #[test]
+    fn words_redirects_and_ampersands_remember_where_they_were_typed() {
+        let src = "echo é ${x} 2>f >  out &";
+        let list = parse(src).unwrap();
+        let text = |span: Span| &src[span.start..span.end];
+        assert_eq!(list[0].background.map(text), Some("&"));
+        let Command::Simple { words, redirects } = &list[0].and_or.first.commands[0] else {
+            panic!("not a simple command");
+        };
+        let words: Vec<&str> = words.iter().map(|w| text(w.span)).collect();
+        assert_eq!(words, ["echo", "é", "${x}"]);
+        let redirects: Vec<&str> = redirects.iter().map(|r| text(r.span)).collect();
+        assert_eq!(redirects, ["2>f", ">  out"]);
     }
 
     fn at(src: &str, start: usize, end: usize) -> String {

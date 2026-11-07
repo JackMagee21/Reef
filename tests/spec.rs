@@ -302,17 +302,17 @@ const ERRORS: &[(&str, &str, i32)] = &[
     // Parsed, but running them needs new Io streams (change these when they land)
     (
         "cat <<EOF",
-        "reef: not supported yet: heredocs (`<<EOF`)\n",
+        "reef: not supported yet: heredocs (`<<EOF`)\n  cat <<EOF\n      ^^^^^\n",
         2,
     ),
     (
         "echo hi 3>x",
-        "reef: not supported yet: file descriptors above 2 (`3>x`)\n",
+        "reef: not supported yet: file descriptors above 2 (`3>x`)\n  echo hi 3>x\n          ^^^\n",
         2,
     ),
     (
         "echo hi >&-",
-        "reef: not supported yet: closing file descriptors (`>&-`)\n",
+        "reef: not supported yet: closing file descriptors (`>&-`)\n  echo hi >&-\n          ^^^\n",
         2,
     ),
     // Redirect errors: the command doesn't run, status 1
@@ -329,7 +329,7 @@ const ERRORS: &[(&str, &str, i32)] = &[
     ("nosuchcmd_reef_test 2>/dev/null", "", 127),
     (
         "true &",
-        "reef: not supported yet: background jobs (`&`)\n",
+        "reef: not supported yet: background jobs (`&`)\n  true &\n       ^\n",
         2,
     ),
     (
@@ -397,8 +397,8 @@ const ERRORS: &[(&str, &str, i32)] = &[
     ("alias ll='ls -la'", "reef: not supported yet: `alias`\n", 2),
     ("echo a | read x", "reef: not supported yet: `read`\n", 2),
     ("jobs", "reef: not supported yet: `jobs`\n", 2),
-    ("echo ${x:-y}", "reef: not supported yet: `${x:-y}`\n", 2),
-    ("echo hi > ${}", "reef: not supported yet: `${}`\n", 2),
+    ("echo ${x:-y}", "reef: not supported yet: `${x:-y}`\n  echo ${x:-y}\n       ^^^^^^^\n", 2),
+    ("echo hi > ${}", "reef: not supported yet: `${}`\n  echo hi > ${}\n            ^^^\n", 2),
     (
         "echo ${x",
         "reef: syntax error: unexpected end of input: unclosed ${\n  echo ${x\n          ^\n",
@@ -417,13 +417,13 @@ const ERRORS: &[(&str, &str, i32)] = &[
     // Too big for a file descriptor: refused, not run as `echo 99999999999 > x`
     (
         "echo 99999999999>x",
-        "reef: not supported yet: file descriptors above 2 (`4294967295>x`)\n",
+        "reef: not supported yet: file descriptors above 2 (`4294967295>x`)\n  echo 99999999999>x\n       ^^^^^^^^^^^^^\n",
         2,
     ),
     // An error stops the whole -c line before anything runs
     (
         "echo first; echo a &",
-        "reef: not supported yet: background jobs (`&`)\n",
+        "reef: not supported yet: background jobs (`&`)\n  echo first; echo a &\n                     ^\n",
         2,
     ),
     // pipes: a builtin writing into a pipe nobody reads stops quietly
@@ -448,22 +448,23 @@ const ERRORS: &[(&str, &str, i32)] = &[
     (
         "echo first; echo $(echo &&)",
         "reef: syntax error: unexpected end of input: `&&` needs a command after it, \
-         inside `$(echo &&)`\n  echo &&\n         ^\n",
+         inside `$(echo &&)`\n  echo first; echo $(echo &&)\n                   ^^^^^^^^^^\n",
         2,
     ),
     (
         "echo $(while x)",
-        "reef: not supported yet: `while`, inside `$(while x)`\n  while x\n  ^^^^^\n",
+        "reef: not supported yet: `while`, inside `$(while x)`\n  echo $(while x)\n       ^^^^^^^^^^\n",
         2,
     ),
     (
         "echo $(echo a &)",
-        "reef: not supported yet: background jobs (`&`)\n",
+        "reef: not supported yet: background jobs (`&`), inside `$(echo a &)`\n  \
+         echo $(echo a &)\n       ^^^^^^^^^^^\n",
         2,
     ),
     (
         "echo $((1 + 2))",
-        "reef: not supported yet: arithmetic (`$((1 + 2))`)\n",
+        "reef: not supported yet: arithmetic (`$((1 + 2))`)\n  echo $((1 + 2))\n       ^^^^^^^^^^\n",
         2,
     ),
 ];

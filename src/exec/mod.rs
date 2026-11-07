@@ -7,7 +7,7 @@ use std::fmt;
 use crate::ast::{AndOr, Command, Connector, List, Pipeline, Redirect};
 use crate::builtins;
 use crate::expand;
-use crate::lexer::Op;
+use crate::lexer::{Op, Span};
 use crate::parser;
 use crate::platform;
 use crate::shell::{Shell, is_valid_name};
@@ -23,8 +23,9 @@ pub fn run_source(src: &str, sh: &mut Shell, io: &mut Io) -> i32 {
         Ok(program) => program,
         Err(e) => return refuse(sh, io, format_args!("{}: {}", e.label(), e.describe(src))),
     };
-    if let Err(message) = check_supported(&program) {
-        return refuse(sh, io, message);
+    if let Err((message, span)) = check_supported(&program) {
+        let (line, pointer) = (parser::line_note(src, span), parser::pointer(src, span));
+        return refuse(sh, io, format_args!("{message}{line}\n{pointer}"));
     }
     list(&program, sh, io)
 }
@@ -41,13 +42,16 @@ fn refuse(sh: &mut Shell, io: &mut Io, message: impl fmt::Display) -> i32 {
     status::SYNTAX_ERROR
 }
 
+/// Why something can't run, and where in the input it is.
+type Refusal = (String, Span);
+
 /// Everything in `list` can run, or the message for the first thing that
 /// can't (`not supported yet: background jobs (`&`)`). Checked before anything
 /// runs, so `echo a; echo b &` fails as a whole instead of running half of it.
-fn check_supported(list: &List) -> Result<(), String> {
+fn check_supported(list: &List) -> Result<(), Refusal> {
     for item in list {
-        if item.background {
-            return Err(not_yet("background jobs (`&`)"));
+        if let Some(amp) = item.background {
+            return Err((not_yet("background jobs (`&`)"), amp));
         }
         for p in item.and_or.pipelines() {
             for c in &p.commands {
@@ -66,21 +70,27 @@ fn check_supported(list: &List) -> Result<(), String> {
 
 /// `${x}` and `$?` can run; `${x:-default}` and friends can't yet. A
 /// `$(...)` is parsed and checked like everything else.
-fn check_word(w: &Word) -> Result<(), String> {
+fn check_word(w: &Word) -> Result<(), Refusal> {
+    let refuse = |message| Err((message, w.span));
     for part in &w.parts {
         match part {
             WordPart::Param { name, .. } if name != "?" && !is_valid_name(name) => {
-                return Err(not_yet(format!("`${{{name}}}`")));
+                return refuse(not_yet(format!("`${{{name}}}`")));
             }
             WordPart::CommandSub { src, .. } if src.starts_with('(') => {
-                return Err(not_yet(format!("arithmetic (`$({src})`)")));
+                return refuse(not_yet(format!("arithmetic (`$({src})`)")));
             }
+            // shortcut: errors inside point at the whole word; `src` doesn't know
+            // where it starts in the line yet
             WordPart::CommandSub { src, .. } => {
-                let program = parser::parse(src).map_err(|e| {
-                    let (label, message) = (e.label(), e.message(src));
-                    format!("{label}: {message}, inside `$({src})`\n{}", e.pointer(src))
-                })?;
-                check_supported(&program)?;
+                let inside = |message| format!("{message}, inside `$({src})`");
+                let program = match parser::parse(src) {
+                    Ok(program) => program,
+                    Err(e) => return refuse(inside(format!("{}: {}", e.label(), e.message(src)))),
+                };
+                if let Err((message, _)) = check_supported(&program) {
+                    return refuse(inside(message));
+                }
             }
             _ => {}
         }
@@ -88,17 +98,18 @@ fn check_word(w: &Word) -> Result<(), String> {
     Ok(())
 }
 
-fn check_redirect(r: &Redirect) -> Result<(), String> {
+fn check_redirect(r: &Redirect) -> Result<(), Refusal> {
     check_word(&r.target)?;
+    let refuse = |what| Err((not_yet(what), r.span));
     if matches!(r.op, Op::DLess | Op::DLessDash) {
         // The body is the lines after the command; reading those comes later
-        return Err(not_yet(format!("heredocs (`{r}`)")));
+        return refuse(format!("heredocs (`{r}`)"));
     }
     if r.fd.is_some_and(|fd| fd > 2) {
-        return Err(not_yet(format!("file descriptors above 2 (`{r}`)")));
+        return refuse(format!("file descriptors above 2 (`{r}`)"));
     }
     if matches!(r.op, Op::GreatAnd | Op::LessAnd) && r.target.as_unquoted() == Some("-") {
-        return Err(not_yet(format!("closing file descriptors (`{r}`)")));
+        return refuse(format!("closing file descriptors (`{r}`)"));
     }
     Ok(())
 }

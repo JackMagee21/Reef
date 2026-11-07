@@ -4,7 +4,7 @@ use crate::word::Word;
 
 /// Where a token sits in the input, as byte offsets: `src[start..end]` is its text.
 /// For error messages that point at the problem, and later for highlighting.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Span {
     pub start: usize,
     pub end: usize,

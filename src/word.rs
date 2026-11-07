@@ -3,11 +3,15 @@
 //! `"echo hhe"bb""` is ONE word made of three parts. Each part remembers whether
 //! it was quoted, because later `$x` vs `"$x"` and `*` vs `"*"` behave differently.
 
+use crate::lexer::Span;
 use crate::shell::is_valid_name;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Word {
     pub parts: Vec<WordPart>,
+    /// Where it was typed, for errors that point at it. Empty (0..0) for words
+    /// Reef makes itself, like the value part of `x=$y`.
+    pub span: Span,
 }
 
 /// Later steps add `Arith` ($((...))).

@@ -118,10 +118,12 @@ fn word(cur: &mut Option<Pending>, i: usize) -> &mut Word {
 
 /// Push the word being built (if any) as a token ending at byte `end`.
 fn end_word(tokens: &mut Vec<Token>, cur: &mut Option<Pending>, end: usize) {
-    if let Some(Pending { start, word }) = cur.take() {
+    if let Some(Pending { start, mut word }) = cur.take() {
+        let span = Span { start, end };
+        word.span = span;
         tokens.push(Token {
             kind: TokenKind::Word(word),
-            span: Span { start, end },
+            span,
         });
     }
 }
