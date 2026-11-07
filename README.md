@@ -28,9 +28,12 @@ Or from a clone: `cargo run`, or `make run`.
 ```sh
 reef --check-update   # is there a newer release? (status 0: no, 1: yes)
 reef --update         # install it
+reef --rollback       # changed your mind? back to the version before
 ```
 
-Updates only ever install a **release** (a tag like `v0.4.0`), never unreleased work in progress, and never a version older than the one you have. `--check-update` asks GitHub which releases exist, without downloading anything (it needs `git`). `--update` builds the newest one with `cargo install --locked`, so its dependencies are exactly the ones it was tested with, and replaces the installed `reef` wherever it was installed. If you already have it, nothing is rebuilt. Works from inside Reef too; the new version is used the next time you start `reef`.
+Updates only ever install a **release** (a tag like `v0.4.0`), never unreleased work in progress, and never a version older than the one you have. `--check-update` asks GitHub which releases exist, without downloading anything (it needs `git`). `--update` builds the newest one with `cargo install --locked`, so its dependencies are exactly the ones it was tested with, and replaces the installed `reef` wherever it was installed. If you already have it, nothing is rebuilt.
+
+Each update keeps the version it replaced as `reef.previous`, next to `reef`, and only once the new one is installed, so a failed update never costs you the old copy. `reef --rollback` swaps the two; run it again to switch forward. If Reef itself won't start, rename `reef.previous` to `reef` by hand (from bash, Ctrl+Shift+B in Konsole). Works from inside Reef too; the new version is used the next time you start `reef`.
 
 Nothing is sent anywhere except the requests to GitHub that fetch the release.
 
