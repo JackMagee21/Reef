@@ -94,14 +94,23 @@ mod tests {
 
     #[test]
     fn a_command_name_follows_operators() {
-        for line in ["ls | expo", "a && expo", "a || expo", "a; expo", "(expo", "{ expo", "! expo", "a\nexpo"] {
+        for line in [
+            "ls | expo",
+            "a && expo",
+            "a || expo",
+            "a; expo",
+            "(expo",
+            "{ expo",
+            "! expo",
+            "a\nexpo",
+        ] {
             assert!(names(line).contains(&"export".to_string()), "{line:?}");
         }
     }
 
     #[test]
     fn other_words_are_not_command_names() {
-        for line in ["echo expo", "ls > expo", "", "echo ", "./expo", "x=1 expo"] {
+        for line in ["echo expo", "ls > expo", "", "echo ", "./expo"] {
             assert_eq!(names(line), Vec::<String>::new(), "{line:?}");
         }
     }

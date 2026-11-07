@@ -3,12 +3,15 @@
 use std::borrow::Cow;
 use std::io::{ErrorKind, IsTerminal, Read};
 use std::path::{MAIN_SEPARATOR, Path};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use reedline::{
-    Color, DefaultHinter, FileBackedHistory, HISTORY_SIZE, Prompt, PromptEditMode,
-    PromptHistorySearch, Reedline, Signal, ValidationResult, Validator,
+    Color, ColumnarMenu, DefaultHinter, Emacs, FileBackedHistory, HISTORY_SIZE, KeyCode,
+    KeyModifiers, MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, Reedline,
+    ReedlineEvent, ReedlineMenu, Signal, ValidationResult, Validator, default_emacs_keybindings,
 };
 
+use crate::complete::TabCompleter;
 use crate::exec;
 use crate::parser::{self, ParseError};
 use crate::platform;
@@ -57,12 +60,32 @@ pub fn start(sh: &mut Shell, io: &mut Io) -> i32 {
 
 // shortcut: no tab completion or highlighting yet; those come with the editor work
 fn interactive(sh: &mut Shell, io: &mut Io) -> i32 {
+    // Tab completion works on a copy of the shell, refreshed before each prompt
+    let for_completion = Arc::new(Mutex::new(sh.clone()));
+    // Tab opens the menu of choices, or moves to the next one when it's open
+    let mut keys = default_emacs_keybindings();
+    keys.add_binding(
+        KeyModifiers::NONE,
+        KeyCode::Tab,
+        ReedlineEvent::UntilFound(vec![
+            ReedlineEvent::Menu("completion_menu".into()),
+            ReedlineEvent::MenuNext,
+        ]),
+    );
     // The faded "ghost" suggestion from history as you type; → accepts it
     let mut editor = Reedline::create()
         .with_validator(Box::new(Continue))
         .with_hinter(Box::new(
             DefaultHinter::default().with_style(Color::DarkGray.italic()),
-        ));
+        ))
+        .with_completer(Box::new(TabCompleter(Arc::clone(&for_completion))))
+        .with_menu(ReedlineMenu::EngineCompleter(Box::new(
+            ColumnarMenu::default().with_name("completion_menu"),
+        )))
+        .with_edit_mode(Box::new(Emacs::new(keys)))
+        // One match fills straight in; several fill in the start they share
+        .with_quick_completions(true)
+        .with_partial_completions(true);
     match saved_history(sh) {
         Ok(history) => editor = editor.with_history(Box::new(history)),
         // Up-arrow and suggestions still work, just for this session
@@ -80,6 +103,9 @@ fn interactive(sh: &mut Shell, io: &mut Io) -> i32 {
 
     sh.interactive = true;
     loop {
+        *for_completion
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = sh.clone();
         // Rebuilt every time: `cd` changes the directory it shows
         match editor.read_line(&UnixPrompt::new(sh)) {
             Ok(signal) => {

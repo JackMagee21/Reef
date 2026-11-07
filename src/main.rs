@@ -1,5 +1,6 @@
 mod ast;
 mod builtins;
+mod complete;
 mod exec;
 mod expand;
 mod glob;
