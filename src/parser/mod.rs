@@ -540,7 +540,11 @@ mod tests {
             ("while x", "`while`", "^^^^^"),
             ("a; fi", "`fi`", "   ^^"),
         ] {
-            assert_eq!(err(src), format!("{message}\n  {src}\n  {caret}"), "{src:?}");
+            assert_eq!(
+                err(src),
+                format!("{message}\n  {src}\n  {caret}"),
+                "{src:?}"
+            );
         }
         let label = |src| parse(src).err().unwrap().label();
         assert_eq!(label("while x"), "not supported yet");
@@ -588,7 +592,10 @@ mod tests {
 
     #[test]
     fn the_pointer_shows_only_its_own_line() {
-        assert_eq!(at("echo a\necho b )\necho c", 14, 15), "  echo b )\n         ^");
+        assert_eq!(
+            at("echo a\necho b )\necho c", 14, 15),
+            "  echo b )\n         ^"
+        );
         assert_eq!(at("echo a )\r\n", 7, 8), "  echo a )\n         ^");
         // a span running past the end of its line stops there
         assert_eq!(at("ab\ncd", 0, 5), "  ab\n  ^^");

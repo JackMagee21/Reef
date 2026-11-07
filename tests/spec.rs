@@ -354,7 +354,11 @@ const ERRORS: &[(&str, &str, i32)] = &[
         2,
     ),
     ("}", "reef: syntax error: unexpected `}`\n  }\n  ^\n", 2),
-    ("( )", "reef: syntax error: unexpected `)`\n  ( )\n    ^\n", 2),
+    (
+        "( )",
+        "reef: syntax error: unexpected `)`\n  ( )\n    ^\n",
+        2,
+    ),
     (
         "echo >",
         "reef: syntax error: `>` needs a file name after it\n  echo >\n       ^\n",
@@ -397,8 +401,16 @@ const ERRORS: &[(&str, &str, i32)] = &[
     ("alias ll='ls -la'", "reef: not supported yet: `alias`\n", 2),
     ("echo a | read x", "reef: not supported yet: `read`\n", 2),
     ("jobs", "reef: not supported yet: `jobs`\n", 2),
-    ("echo ${x:-y}", "reef: not supported yet: `${x:-y}`\n  echo ${x:-y}\n       ^^^^^^^\n", 2),
-    ("echo hi > ${}", "reef: not supported yet: `${}`\n  echo hi > ${}\n            ^^^\n", 2),
+    (
+        "echo ${x:-y}",
+        "reef: not supported yet: `${x:-y}`\n  echo ${x:-y}\n       ^^^^^^^\n",
+        2,
+    ),
+    (
+        "echo hi > ${}",
+        "reef: not supported yet: `${}`\n  echo hi > ${}\n            ^^^\n",
+        2,
+    ),
     (
         "echo ${x",
         "reef: syntax error: unexpected end of input: unclosed ${\n  echo ${x\n          ^\n",
