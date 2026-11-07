@@ -64,7 +64,7 @@ pub fn fields(word: &Word, sh: &mut Shell, io: &mut Io) -> Vec<String> {
                 continue;
             }
             WordPart::Param { name, quoted, .. } => (value(name, sh), *quoted),
-            WordPart::CommandSub { src, quoted } => (substitute(src, sh, io), *quoted),
+            WordPart::CommandSub { src, quoted, .. } => (substitute(src, sh, io), *quoted),
         };
         if quoted {
             cur.get_or_insert_default().push(&value, true);

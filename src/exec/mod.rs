@@ -80,17 +80,16 @@ fn check_word(w: &Word) -> Result<(), Refusal> {
             WordPart::CommandSub { src, .. } if src.starts_with('(') => {
                 return refuse(not_yet(format!("arithmetic (`$({src})`)")));
             }
-            // shortcut: errors inside point at the whole word; `src` doesn't know
-            // where it starts in the line yet
-            WordPart::CommandSub { src, .. } => {
-                let inside = |message| format!("{message}, inside `$({src})`");
-                let program = match parser::parse(src) {
-                    Ok(program) => program,
-                    Err(e) => return refuse(inside(format!("{}: {}", e.label(), e.message(src)))),
+            WordPart::CommandSub { src, offset, .. } => {
+                // Positions inside count from the start of `src`: move them to
+                // where `src` sits in the whole input. Nested `$(...)` add up.
+                let shift = |s: Span| Span {
+                    start: s.start + offset,
+                    end: s.end + offset,
                 };
-                if let Err((message, _)) = check_supported(&program) {
-                    return refuse(inside(message));
-                }
+                let program = parser::parse(src)
+                    .map_err(|e| (format!("{}: {}", e.label(), e.what()), shift(e.span(src))))?;
+                check_supported(&program).map_err(|(message, span)| (message, shift(span)))?;
             }
             _ => {}
         }

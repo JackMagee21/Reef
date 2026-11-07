@@ -42,12 +42,16 @@ impl ParseError {
 
     /// What went wrong, in one line. `(line 2)` when it isn't on the first line.
     pub fn message(&self, src: &str) -> String {
-        let what = match self {
-            ParseError::Incomplete(what) => &format!("unexpected end of input: {what}"),
-            ParseError::Syntax { message, .. } => message,
-            ParseError::NotYet { what, .. } => what,
-        };
-        format!("{what}{}", line_note(src, self.span(src)))
+        format!("{}{}", self.what(), line_note(src, self.span(src)))
+    }
+
+    /// What went wrong, without where.
+    pub fn what(&self) -> String {
+        match self {
+            ParseError::Incomplete(what) => format!("unexpected end of input: {what}"),
+            ParseError::Syntax { message, .. } => message.clone(),
+            ParseError::NotYet { what, .. } => what.clone(),
+        }
     }
 
     /// The line it went wrong on, with a `^` under the spot.
@@ -57,7 +61,7 @@ impl ParseError {
 
     /// Where it went wrong. Unfinished input points just past its end, where
     /// the missing part would go.
-    fn span(&self, src: &str) -> Span {
+    pub fn span(&self, src: &str) -> Span {
         match self {
             ParseError::Incomplete(_) => {
                 let end = src.trim_end().len();

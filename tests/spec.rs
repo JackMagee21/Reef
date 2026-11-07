@@ -456,22 +456,32 @@ const ERRORS: &[(&str, &str, i32)] = &[
         "reef: syntax error: unexpected end of input: unclosed $(\n  echo $(echo hi\n                ^\n",
         2,
     ),
-    // checked before anything runs, inside too
+    // checked before anything runs, inside too, pointing at the exact spot
     (
         "echo first; echo $(echo &&)",
-        "reef: syntax error: unexpected end of input: `&&` needs a command after it, \
-         inside `$(echo &&)`\n  echo first; echo $(echo &&)\n                   ^^^^^^^^^^\n",
+        "reef: syntax error: unexpected end of input: `&&` needs a command after it\n  \
+         echo first; echo $(echo &&)\n                            ^\n",
         2,
     ),
     (
         "echo $(while x)",
-        "reef: not supported yet: `while`, inside `$(while x)`\n  echo $(while x)\n       ^^^^^^^^^^\n",
+        "reef: not supported yet: `while`\n  echo $(while x)\n         ^^^^^\n",
         2,
     ),
     (
         "echo $(echo a &)",
-        "reef: not supported yet: background jobs (`&`), inside `$(echo a &)`\n  \
-         echo $(echo a &)\n       ^^^^^^^^^^^\n",
+        "reef: not supported yet: background jobs (`&`)\n  echo $(echo a &)\n                ^\n",
+        2,
+    ),
+    // nested, inside quotes, and after a two-byte `é`
+    (
+        "echo $(echo $(echo ;;))",
+        "reef: syntax error: unexpected `;;`\n  echo $(echo $(echo ;;))\n                     ^^\n",
+        2,
+    ),
+    (
+        "echo \"é $(echo ${x:-1})\"",
+        "reef: not supported yet: `${x:-1}`\n  echo \"é $(echo ${x:-1})\"\n                 ^^^^^^^\n",
         2,
     ),
     (

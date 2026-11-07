@@ -187,10 +187,14 @@ fn read_dollar(
         Ok(())
     };
     match chars.peek() {
-        Some((_, '(')) => {
+        Some(&(open, '(')) => {
             chars.next();
             let src = read_command_sub(chars)?;
-            word.parts.push(WordPart::CommandSub { src, quoted });
+            word.parts.push(WordPart::CommandSub {
+                src,
+                quoted,
+                offset: open + 1,
+            });
             Ok(())
         }
         Some((_, '{')) => {
@@ -226,6 +230,9 @@ fn read_dollar(
 /// The text of `$( ... )` after the `$(`, up to its matching `)`. Quotes, `\`,
 /// nested `( )` and comments are stepped over, so `$(echo ")")` ends in the
 /// right place. Parsing the text is left to the parser, later.
+///
+/// The text is copied exactly as typed, so it's a slice of the input: errors
+/// inside find their place in the line by adding where it starts.
 // shortcut: a `case` pattern's lone `)` would end it early; revisit with `case`
 fn read_command_sub(chars: &mut Peekable<CharIndices>) -> Result<String, LexError> {
     let mut src = String::new();
@@ -578,5 +585,29 @@ mod tests {
             .map(|t| &"2>&1"[t.span.start..t.span.end])
             .collect();
         assert_eq!(io, ["2", ">&", "1"]);
+    }
+
+    #[test]
+    fn command_sub_text_is_an_exact_slice_of_the_input() {
+        // errors inside point into the line by adding `offset`, which only
+        // works if `src` is copied exactly as typed
+        let src = r#"é $(a "b)" \) # c)
+d) "$(e $(f))""#;
+        let mut found = Vec::new();
+        for token in lex(src).unwrap() {
+            let TokenKind::Word(w) = token.kind else {
+                continue;
+            };
+            for part in w.parts {
+                if let WordPart::CommandSub {
+                    src: inner, offset, ..
+                } = part
+                {
+                    assert_eq!(&src[offset..offset + inner.len()], inner);
+                    found.push(inner);
+                }
+            }
+        }
+        assert_eq!(found, ["a \"b)\" \\) # c)\nd", "e $(f)"]);
     }
 }

@@ -33,6 +33,9 @@ pub enum WordPart {
     CommandSub {
         src: String,
         quoted: bool,
+        /// Where `src` starts in the input it was typed in, so an error inside
+        /// can point at the right character of the whole line.
+        offset: usize,
     },
 }
 
