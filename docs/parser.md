@@ -56,6 +56,8 @@ reef: syntax error: unexpected `)`
          ^
 ```
 
+The checks that run after parsing (`${x:-1}`, `3>f`, `&`, see `exec::check_supported`) point the same way: words, redirects and the `&` keep the `Span` they were typed at. An error inside `$(...)` points at the whole `$(...)` for now.
+
 `parser::pointer` draws it. It counts characters rather than bytes, so `é` doesn't shift the `^`, and copies tabs so both lines line up. Unfinished input (`echo a &&` with `-c`) points just past the end. An error after the first line adds `(line 2)`, counted from the start of the command being run: piped input is run one complete command at a time.
 
 **At the prompt**, pressing Enter on an unfinished command starts a new line instead of running it, so you can type `{`, `echo a` and `}` on three lines. The prompt's line editor asks the parser whether the text is finished.
