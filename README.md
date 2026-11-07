@@ -26,11 +26,15 @@ Or from a clone: `cargo run`, or `make run`.
 ## Update
 
 ```sh
-reef --check-update   # is there a newer version? (status 0: no, 1: yes)
+reef --check-update   # is there a newer release? (status 0: no, 1: yes)
 reef --update         # install it
 ```
 
-`--check-update` compares the commit you have with the newest on GitHub, without downloading anything (it needs `git`). `--update` rebuilds the newest commit from GitHub and replaces the installed `reef`, wherever it was installed. If it's already the newest, nothing is rebuilt. Works from inside Reef too; the new version is used the next time you start `reef`.
+Updates only ever install a **release** (a tag like `v0.4.0`), never unreleased work in progress, and never a version older than the one you have. `--check-update` asks GitHub which releases exist, without downloading anything (it needs `git`). `--update` builds the newest one with `cargo install --locked`, so its dependencies are exactly the ones it was tested with, and replaces the installed `reef` wherever it was installed. If you already have it, nothing is rebuilt. Works from inside Reef too; the new version is used the next time you start `reef`.
+
+Nothing is sent anywhere except the requests to GitHub that fetch the release.
+
+To make a release: set `version` in `Cargo.toml`, commit, then `git tag -a v0.4.0 -m "reef 0.4.0"` and `git push --follow-tags`.
 
 ## Use it as your terminal's shell
 

@@ -1,6 +1,11 @@
-//! `reef --update`: reinstall the newest Reef from GitHub with cargo, into
-//! the same place the running one was installed. `reef --check-update`: say
-//! whether that would change anything.
+//! `reef --update`: reinstall the newest Reef release from GitHub with cargo,
+//! into the same place the running one was installed. `reef --check-update`:
+//! say whether that would change anything.
+//!
+//! Only releases (tags like `v0.4.0`) are ever installed, never whatever was
+//! pushed last, and never an older version than the one running. Builds use
+//! `--locked`, so the dependencies are exactly the ones the release was tested
+//! with. Nothing is sent anywhere but GitHub, and only to ask what's there.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -10,15 +15,35 @@ use crate::streams::describe_error;
 
 const REPO: &str = "https://github.com/JackMagee21/Reef";
 
+/// A release: `v0.4.0` is (0, 4, 0).
+type Version = (u64, u64, u64);
+
+/// The version this reef was built as.
+fn running() -> Version {
+    parse_version(env!("CARGO_PKG_VERSION")).unwrap_or((0, 0, 0))
+}
+
 /// Returns Reef's exit status. Cargo itself prints the progress, and skips
-/// the build when the installed copy is already the newest commit.
-// shortcut: builds the latest commit on GitHub's default branch, not a release; switch to tags once releases exist
+/// the build when the installed copy is already that release.
 pub fn run() -> i32 {
     let fail = |message: &str| fail("--update", message);
     let (exe, root) = match installed() {
         Ok(found) => found,
         Err(message) => return fail(&message),
     };
+    let (version, _) = match newest_release() {
+        Ok(release) => release,
+        Err(message) => return fail(&message),
+    };
+    // A release older than this one is never "newer", even if it's the newest tag
+    if version < running() {
+        println!(
+            "reef {} is newer than the newest release ({}); nothing to do",
+            env!("CARGO_PKG_VERSION"),
+            show(version)
+        );
+        return 0;
+    }
 
     let moved = match platform::move_aside_running_exe(&exe) {
         Ok(moved) => moved,
@@ -31,8 +56,18 @@ pub fn run() -> i32 {
         }
     };
     let result = Command::new("cargo")
-        .args(["install", "--git", REPO, "--root"])
+        .args([
+            "install",
+            "--locked",
+            "--git",
+            REPO,
+            "--tag",
+            &tag(version),
+            "--root",
+        ])
         .arg(&root)
+        // fail instead of asking for a password if the repo is ever unreachable
+        .env("GIT_TERMINAL_PROMPT", "0")
         .status();
     let code = match result {
         Ok(s) if s.success() => return 0,
@@ -53,7 +88,7 @@ pub fn run() -> i32 {
 }
 
 /// `reef --check-update`: compares the commit cargo installed with the newest
-/// one on GitHub. Status 0 when up to date, 1 when there's an update or it
+/// release's. Status 0 when up to date, 1 when there's an update or it
 /// couldn't tell (and says why).
 pub fn check() -> i32 {
     let fail = |message: &str| fail("--check-update", message);
@@ -64,26 +99,24 @@ pub fn check() -> i32 {
     let crates = std::fs::read_to_string(root.join(".crates.toml")).unwrap_or_default();
     let Some(have) = installed_commit(&crates) else {
         return fail(
-            "this reef wasn't installed from GitHub, so there's no commit to compare; `reef --update` installs the newest",
+            "this reef wasn't installed from GitHub, so there's no commit to compare; `reef --update` installs the newest release",
         );
     };
-    let newest = match newest_commit() {
-        Ok(commit) => commit,
+    let (version, commit) = match newest_release() {
+        Ok(release) => release,
         Err(message) => return fail(&message),
     };
-    let short = |commit: &str| commit.get(..7).unwrap_or(commit).to_string();
-    if have == newest {
+    let current = env!("CARGO_PKG_VERSION");
+    if have == commit || version < running() {
         println!(
-            "reef {} is up to date ({})",
-            env!("CARGO_PKG_VERSION"),
-            short(&have)
+            "reef {current} is up to date (newest release: {})",
+            show(version)
         );
         0
     } else {
         println!(
-            "a newer reef is available ({} → {}); run `reef --update`",
-            short(&have),
-            short(&newest)
+            "reef {} is available (you have {current}); run `reef --update`",
+            show(version)
         );
         1
     }
@@ -109,19 +142,28 @@ fn installed() -> Result<(PathBuf, PathBuf), String> {
 }
 
 /// The commit in cargo's list of installed programs (`<root>/.crates.toml`), from a line like
-/// `"reef 0.3.0 (git+https://github.com/JackMagee21/Reef#08d23aa...)" = ["reef"]`.
+/// `"reef 0.4.0 (git+https://github.com/JackMagee21/Reef?tag=v0.4.0#08d23aa...)" = ["reef"]`.
+/// Older installs have no `?tag=...` part.
 fn installed_commit(crates: &str) -> Option<String> {
-    let marker = format!("(git+{REPO}#");
+    let marker = format!("(git+{REPO}");
     crates
         .lines()
         .filter(|line| line.starts_with("\"reef "))
-        .find_map(|line| Some(line.split_once(&marker)?.1.split_once(')')?.0.to_string()))
+        .find_map(|line| {
+            let source = line.split_once(&marker)?.1.split_once(')')?.0;
+            // Exactly this repo: `#commit` or `?tag=...#commit`, not `.../Reef-fork#...`
+            if !source.starts_with(['#', '?']) {
+                return None;
+            }
+            Some(source.split_once('#')?.1.to_string())
+        })
 }
 
-/// The newest commit on GitHub, from `git ls-remote` (a few hundred bytes, no download).
-fn newest_commit() -> Result<String, String> {
+/// The newest release on GitHub and its commit, from `git ls-remote` (a few
+/// hundred bytes, no download).
+fn newest_release() -> Result<(Version, String), String> {
     let out = Command::new("git")
-        .args(["ls-remote", REPO, "HEAD"])
+        .args(["ls-remote", "--tags", REPO])
         // fail instead of asking for a password if the repo is ever unreachable
         .env("GIT_TERMINAL_PROMPT", "0")
         .output()
@@ -130,11 +172,61 @@ fn newest_commit() -> Result<String, String> {
         let why = String::from_utf8_lossy(&out.stderr);
         return Err(format!("can't reach {REPO}: {}", why.trim()));
     }
-    String::from_utf8_lossy(&out.stdout)
-        .split_whitespace()
-        .next()
-        .map(str::to_string)
-        .ok_or_else(|| format!("{REPO} has no commits"))
+    newest_in(&String::from_utf8_lossy(&out.stdout))
+        .ok_or_else(|| format!("{REPO} has no releases yet (tags like v0.4.0)"))
+}
+
+/// The highest `vX.Y.Z` tag in `git ls-remote --tags` output, and its commit.
+///
+/// Anything else (`v1.0-beta`, `latest`, a name that's really an option like
+/// `--x`) is ignored, so only a plain release number ever reaches cargo.
+/// An annotated tag is listed twice: as itself, and as `v0.4.0^{}` with the
+/// commit it points at, which is the one cargo records.
+fn newest_in(listing: &str) -> Option<(Version, String)> {
+    let mut best: Option<(Version, String, bool)> = None;
+    for line in listing.lines() {
+        let Some((commit, name)) = line.split_once('\t') else {
+            continue;
+        };
+        let Some(name) = name.strip_prefix("refs/tags/v") else {
+            continue;
+        };
+        let (name, peeled) = match name.strip_suffix("^{}") {
+            Some(name) => (name, true),
+            None => (name, false),
+        };
+        let Some(version) = parse_version(name) else {
+            continue;
+        };
+        let better = match &best {
+            None => true,
+            Some((v, _, was_peeled)) => version > *v || version == *v && peeled && !was_peeled,
+        };
+        if better {
+            best = Some((version, commit.to_string(), peeled));
+        }
+    }
+    best.map(|(version, commit, _)| (version, commit))
+}
+
+/// `0.4.0` as (0, 4, 0). Exactly three plain numbers, nothing else.
+fn parse_version(text: &str) -> Option<Version> {
+    let mut parts = text
+        .split('.')
+        .map(|p| match p.bytes().all(|b| b.is_ascii_digit()) {
+            true => p.parse::<u64>().ok(),
+            false => None,
+        });
+    let version = (parts.next()??, parts.next()??, parts.next()??);
+    parts.next().is_none().then_some(version)
+}
+
+fn show((major, minor, patch): Version) -> String {
+    format!("{major}.{minor}.{patch}")
+}
+
+fn tag(version: Version) -> String {
+    format!("v{}", show(version))
 }
 
 fn fail(flag: &str, message: &str) -> i32 {
@@ -151,15 +243,55 @@ mod tests {
         let crates = format!(
             "[v1]\n\
              \"other 1.0.0 (registry+https://x)\" = [\"other\"]\n\
-             \"reef 0.3.0 (git+{REPO}#08d23aaf25506610)\" = [\"reef\"]\n"
+             \"reef 0.4.0 (git+{REPO}?tag=v0.4.0#08d23aaf25506610)\" = [\"reef\"]\n"
         );
         assert_eq!(
             installed_commit(&crates).as_deref(),
             Some("08d23aaf25506610")
         );
+        // before releases: straight from the branch
+        let branch = format!("\"reef 0.3.0 (git+{REPO}#62183b5)\" = [\"reef\"]");
+        assert_eq!(installed_commit(&branch).as_deref(), Some("62183b5"));
+        // a fork whose name starts the same isn't this repo
+        let fork = format!("\"reef 0.3.0 (git+{REPO}-fork#62183b5)\" = [\"reef\"]");
+        assert_eq!(installed_commit(&fork), None);
         // installed from a local folder: no commit to compare
         let local = "\"reef 0.3.0 (path+file:///home/jmt/Documents/Reef)\" = [\"reef\"]";
         assert_eq!(installed_commit(local), None);
         assert_eq!(installed_commit(""), None);
+    }
+
+    #[test]
+    fn the_newest_release_is_the_highest_plain_version() {
+        let listing = "\
+            aaa\trefs/tags/v0.3.0\n\
+            bbb\trefs/tags/v0.10.0\n\
+            ccc\trefs/tags/v0.9.9\n\
+            ddd\trefs/tags/v2.0.0-beta\n\
+            eee\trefs/tags/latest\n\
+            fff\trefs/tags/v--upload-pack=x\n\
+            ggg\trefs/heads/v9.9.9\n";
+        // 10 beats 9 as a number, not as text; the rest aren't releases
+        assert_eq!(newest_in(listing), Some(((0, 10, 0), "bbb".into())));
+        assert_eq!(newest_in(""), None);
+    }
+
+    #[test]
+    fn an_annotated_tag_gives_the_commit_it_points_at() {
+        // `^{}` is the commit; the plain line is the tag object, in either order
+        let listing = "tag1\trefs/tags/v0.4.0\ncommit1\trefs/tags/v0.4.0^{}\n";
+        assert_eq!(newest_in(listing), Some(((0, 4, 0), "commit1".into())));
+        let listing = "commit1\trefs/tags/v0.4.0^{}\ntag1\trefs/tags/v0.4.0\n";
+        assert_eq!(newest_in(listing), Some(((0, 4, 0), "commit1".into())));
+    }
+
+    #[test]
+    fn versions_are_exactly_three_numbers() {
+        assert_eq!(parse_version("0.4.0"), Some((0, 4, 0)));
+        assert_eq!(parse_version("10.20.30"), Some((10, 20, 30)));
+        for bad in ["0.4", "0.4.0.1", "0.4.0-rc1", "+1.0.0", "a.b.c", "", "0..0"] {
+            assert_eq!(parse_version(bad), None, "{bad:?}");
+        }
+        assert_eq!(tag((0, 4, 0)), "v0.4.0");
     }
 }
