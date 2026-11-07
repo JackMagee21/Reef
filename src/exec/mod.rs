@@ -76,9 +76,10 @@ fn check_word(w: &Word) -> Result<(), String> {
                 return Err(not_yet(format!("arithmetic (`$({src})`)")));
             }
             WordPart::CommandSub { src, .. } => {
-                let inside = |message| format!("{message}, inside `$({src})`");
-                let program = parser::parse(src)
-                    .map_err(|e| inside(format!("{}: {}", e.label(), e.describe(src))))?;
+                let program = parser::parse(src).map_err(|e| {
+                    let (label, message) = (e.label(), e.message(src));
+                    format!("{label}: {message}, inside `$({src})`\n{}", e.pointer(src))
+                })?;
                 check_supported(&program)?;
             }
             _ => {}

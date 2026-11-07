@@ -35,26 +35,67 @@ impl ParseError {
         }
     }
 
-    /// The message to show. Needs the source to turn the span into a line and column.
+    /// The whole message: what went wrong, then the line with a `^` under it.
     pub fn describe(&self, src: &str) -> String {
+        format!("{}\n{}", self.message(src), self.pointer(src))
+    }
+
+    /// What went wrong, in one line. `(line 2)` when it isn't on the first line.
+    pub fn message(&self, src: &str) -> String {
+        let what = match self {
+            ParseError::Incomplete(what) => &format!("unexpected end of input: {what}"),
+            ParseError::Syntax { message, .. } => message,
+            ParseError::NotYet { what, .. } => what,
+        };
+        let start = src.floor_char_boundary(self.span(src).start);
+        match src[..start].matches('\n').count() + 1 {
+            1 => what.to_string(),
+            line => format!("{what} (line {line})"),
+        }
+    }
+
+    /// The line it went wrong on, with a `^` under the spot.
+    pub fn pointer(&self, src: &str) -> String {
+        pointer(src, self.span(src))
+    }
+
+    /// Where it went wrong. Unfinished input points just past its end, where
+    /// the missing part would go.
+    fn span(&self, src: &str) -> Span {
         match self {
-            ParseError::Incomplete(what) => format!("unexpected end of input: {what}"),
-            ParseError::Syntax { message, span } => format!("{message} {}", position(src, *span)),
-            ParseError::NotYet { what, span } => format!("{what} {}", position(src, *span)),
+            ParseError::Incomplete(_) => {
+                let end = src.trim_end().len();
+                Span { start: end, end }
+            }
+            ParseError::Syntax { span, .. } | ParseError::NotYet { span, .. } => *span,
         }
     }
 }
 
-/// `(column 8)`, or `(line 2, column 3)` when the input has several lines.
-fn position(src: &str, span: Span) -> String {
-    let before = &src[..span.start];
-    let line = before.matches('\n').count() + 1;
-    let column = before.rsplit('\n').next().unwrap_or("").chars().count() + 1;
-    if line == 1 {
-        format!("(column {column})")
-    } else {
-        format!("(line {line}, column {column})")
-    }
+/// The line of `src` that `span` starts on, indented two spaces, with a `^`
+/// under each character of the span (at least one, so the end of input shows):
+///
+/// ```text
+///   echo a )
+///          ^
+/// ```
+///
+/// Counts characters, not bytes, so `é` doesn't push the `^` off its target.
+// shortcut: wide characters (emoji, CJK) fill two columns, so the `^` drifts after one
+pub fn pointer(src: &str, span: Span) -> String {
+    // A span should never split a character, but slicing there would crash Reef
+    let start = src.floor_char_boundary(span.start);
+    let line_start = src[..start].rfind('\n').map_or(0, |i| i + 1);
+    let line_end = src[start..].find('\n').map_or(src.len(), |i| start + i);
+    let end = src.floor_char_boundary(span.end.clamp(start, line_end));
+    // A tab stays a tab, so the terminal moves both lines the same distance
+    let indent: String = src[line_start..start]
+        .chars()
+        .map(|c| if c == '\t' { '\t' } else { ' ' })
+        .collect();
+    let width = src[start..end].chars().count().max(1);
+    let line = src[line_start..line_end].trim_end_matches('\r');
+    format!("  {line}\n  {indent}{}", "^".repeat(width))
 }
 
 /// Lex and parse a whole input.
@@ -447,7 +488,7 @@ mod tests {
         // `}` without `;` before it is just an argument, so the group isn't closed
         assert_eq!(
             err("{ echo a }"),
-            "unexpected end of input: `{` is missing its `}`"
+            "unexpected end of input: `{` is missing its `}`\n  { echo a }\n            ^"
         );
     }
 
@@ -468,23 +509,68 @@ mod tests {
 
     #[test]
     fn syntax_errors_point_at_the_token() {
-        assert_eq!(err("a ;;"), "unexpected `;;` (column 3)");
-        assert_eq!(err("; a"), "unexpected `;` (column 1)");
-        assert_eq!(err("a && ; b"), "unexpected `;` (column 6)");
-        assert_eq!(err(")"), "unexpected `)` (column 1)");
-        assert_eq!(err("( )"), "unexpected `)` (column 3)");
-        assert_eq!(err("{ }"), "unexpected `}` (column 3)");
-        assert_eq!(err("(a; }"), "unexpected `}` (column 5)");
-        assert_eq!(err("(a) b"), "unexpected `b` (column 5)");
-        assert_eq!(err("a | }"), "unexpected `}` (column 5)");
-        assert_eq!(err("a > ;"), "`>` needs a file name after it (column 3)");
-        assert_eq!(err("a 2>"), "`>` needs a file name after it (column 4)");
-        assert_eq!(err("while x"), "`while` (column 1)");
+        // (input, message, the `^` line without its two-space indent)
+        for (src, message, caret) in [
+            ("a ;;", "unexpected `;;`", "  ^^"),
+            ("; a", "unexpected `;`", "^"),
+            ("a && ; b", "unexpected `;`", "     ^"),
+            (")", "unexpected `)`", "^"),
+            ("( )", "unexpected `)`", "  ^"),
+            ("{ }", "unexpected `}`", "  ^"),
+            ("(a; }", "unexpected `}`", "    ^"),
+            ("(a) b", "unexpected `b`", "    ^"),
+            ("a | }", "unexpected `}`", "    ^"),
+            ("a > ;", "`>` needs a file name after it", "  ^"),
+            ("a 2>", "`>` needs a file name after it", "   ^"),
+            ("while x", "`while`", "^^^^^"),
+            ("a; fi", "`fi`", "   ^^"),
+        ] {
+            assert_eq!(err(src), format!("{message}\n  {src}\n  {caret}"), "{src:?}");
+        }
         let label = |src| parse(src).err().unwrap().label();
         assert_eq!(label("while x"), "not supported yet");
         assert_eq!(label("a ;;"), "syntax error");
         assert_eq!(label("a &&"), "syntax error");
-        assert_eq!(err("a; fi"), "`fi` (column 4)");
-        assert_eq!(err("a\nb )"), "unexpected `)` (line 2, column 3)");
+    }
+
+    #[test]
+    fn errors_after_the_first_line_say_which_line() {
+        assert_eq!(err("a\nb )"), "unexpected `)` (line 2)\n  b )\n    ^");
+        assert_eq!(
+            err("a &&\n"),
+            "unexpected end of input: `&&` needs a command after it\n  a &&\n      ^"
+        );
+    }
+
+    fn at(src: &str, start: usize, end: usize) -> String {
+        pointer(src, Span { start, end })
+    }
+
+    #[test]
+    fn the_pointer_counts_characters_not_bytes() {
+        // `é` is two bytes: the `)` is byte 8 but character 7
+        assert_eq!(at("echo é )", 8, 9), "  echo é )\n         ^");
+        // tabs stay tabs, so both lines line up however wide the terminal draws them
+        assert_eq!(at("\techo )", 6, 7), "  \techo )\n  \t     ^");
+        // a whole word gets one `^` per character
+        assert_eq!(at("echo ${x:-1}", 5, 12), "  echo ${x:-1}\n       ^^^^^^^");
+    }
+
+    #[test]
+    fn the_pointer_shows_only_its_own_line() {
+        assert_eq!(at("echo a\necho b )\necho c", 14, 15), "  echo b )\n         ^");
+        assert_eq!(at("echo a )\r\n", 7, 8), "  echo a )\n         ^");
+        // a span running past the end of its line stops there
+        assert_eq!(at("ab\ncd", 0, 5), "  ab\n  ^^");
+    }
+
+    #[test]
+    fn the_pointer_never_crashes_on_a_bad_span() {
+        // past the end: one `^` after the last character
+        assert_eq!(at("a &&", 4, 4), "  a &&\n      ^");
+        assert_eq!(at("a", 99, 99), "  a\n   ^");
+        // inside `é` (bytes 0..2): moved back to its start
+        assert_eq!(at("é", 1, 2), "  é\n  ^");
+        assert_eq!(at("", 0, 0), "  \n  ^");
     }
 }
