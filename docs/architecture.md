@@ -58,6 +58,7 @@ exit status (i32)  →  Shell::last_status  ($?)
 | `exec/mod.rs` | `run_source` (parse, check, run), walking the tree, and starting builtins and programs | no |
 | `exec/redirect.rs` | turning a command's redirects into the `Io` it runs with | no |
 | `repl.rs` | the prompt loop (reedline) and piped-stdin mode | no |
+| `complete.rs` | tab completion: which word the cursor is in, and what could finish it | no (the list of programs on `PATH` comes from `platform/`) |
 | `shell.rs` | `Shell`: state that survives between commands | no |
 | `word.rs` | `Word` and `WordPart`: one argument before expansion, and spotting `name=value` | no |
 | `expand.rs` | expanding `~`, `$x`, `$?` and `$(...)` in a `Word`, field splitting, and handing patterns to `glob.rs` | no |
@@ -106,4 +107,4 @@ External programs start with `Shell::cwd` as their directory, the exported varia
 
 ## Planned, in order
 
-Control flow and functions → editor features (completion, highlighting). History and suggestions already work (`repl.rs`).
+Control flow and functions → editor features (completion, highlighting). History, suggestions and completing command names already work (`repl.rs`, `complete.rs`).
