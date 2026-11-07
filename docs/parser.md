@@ -56,7 +56,7 @@ reef: syntax error: unexpected `)`
          ^
 ```
 
-The checks that run after parsing (`${x:-1}`, `3>f`, `&`, see `exec::check_supported`) point the same way: words, redirects and the `&` keep the `Span` they were typed at. An error inside `$(...)` points at the whole `$(...)` for now.
+The checks that run after parsing (`${x:-1}`, `3>f`, `&`, see `exec::check_supported`) point the same way: words, redirects and the `&` keep the `Span` they were typed at. Inside `$(...)` too: the lexer records where its text starts in the line (`CommandSub.offset`), and the check adds that to every position found inside, so the `^` lands on the exact character even in a nested `$(...)`.
 
 `parser::pointer` draws it. It counts characters rather than bytes, so `é` doesn't shift the `^`, and copies tabs so both lines line up. Unfinished input (`echo a &&` with `-c`) points just past the end. An error after the first line adds `(line 2)`, counted from the start of the command being run: piped input is run one complete command at a time.
 
