@@ -107,4 +107,4 @@ External programs start with `Shell::cwd` as their directory, the exported varia
 
 ## Planned, in order
 
-Control flow and functions → editor features (completion, highlighting). History, suggestions and completing command names already work (`repl.rs`, `complete.rs`).
+Control flow and functions → editor features (completion, highlighting). History, suggestions and tab completion already work (`repl.rs`, `complete.rs`).

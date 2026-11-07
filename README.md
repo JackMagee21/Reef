@@ -54,11 +54,11 @@ Point your terminal at Reef rather than changing your login shell: Reef can't ru
 - Lines ending in `\`, `&&` or an open quote continue on the next line
 - History: ↑/↓ go through earlier commands, saved between sessions in `~/.local/share/reef/history` (`%APPDATA%\reef\history` on Windows)
 - Suggestions: as you type, a faded match from your history appears; → accepts it
-- Tab completion of command names: one match fills in, several open a menu (file names come next)
+- Tab completion: the first word to a command, the rest to files and folders (`cat src/pa` → `src/parser/`). One match fills in, several open a menu
 
 ## Not yet
 
-Background jobs (`&`, `fg`, `jobs`), aliases, `read`, backticks, heredocs, `if`/`for`/`while`/`case`, functions, running script files, tab completion of file names. Anything not supported says so (`reef: not supported yet: ...`) instead of doing the wrong thing.
+Background jobs (`&`, `fg`, `jobs`), aliases, `read`, backticks, heredocs, `if`/`for`/`while`/`case`, functions, running script files. Anything not supported says so (`reef: not supported yet: ...`) instead of doing the wrong thing.
 
 ## More
 
