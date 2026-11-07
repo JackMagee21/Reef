@@ -57,7 +57,7 @@ Point your terminal at Reef rather than changing your login shell: Reef can't ru
 
 ## Not yet
 
-Background jobs (`&`), backticks, heredocs, `if`/`for`/`while`/`case`, functions, running script files, tab completion. Anything not supported says so (`reef: not supported yet: ...`) instead of doing the wrong thing.
+Background jobs (`&`, `fg`, `jobs`), aliases, `read`, backticks, heredocs, `if`/`for`/`while`/`case`, functions, running script files, tab completion. Anything not supported says so (`reef: not supported yet: ...`) instead of doing the wrong thing.
 
 ## More
 

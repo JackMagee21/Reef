@@ -48,7 +48,15 @@ Details that are easy to get wrong:
 | `ParseError::Incomplete` | the input stops in the middle: `echo a &&`, `{ echo a;`, an open quote | piped mode and the prompt read another line; `-c` reports it |
 | `ParseError::Syntax` | the input is wrong: `; echo`, `echo )`, `echo >` | reported with its position, status 2 |
 
-Syntax errors point at the token: `unexpected `)` (column 8)`, or `(line 2, column 3)` when the input has several lines.
+Errors show the line they're on, with a `^` under each character of the token:
+
+```
+reef: syntax error: unexpected `)`
+  echo a )
+         ^
+```
+
+`parser::pointer` draws it. It counts characters rather than bytes, so `é` doesn't shift the `^`, and copies tabs so both lines line up. Unfinished input (`echo a &&` with `-c`) points just past the end. An error after the first line adds `(line 2)`, counted from the start of the command being run: piped input is run one complete command at a time.
 
 **At the prompt**, pressing Enter on an unfinished command starts a new line instead of running it, so you can type `{`, `echo a` and `}` on three lines. The prompt's line editor asks the parser whether the text is finished.
 

@@ -53,6 +53,10 @@ Unused parameters get a leading `_` (for example `_sh`). Keeping one shape means
 4. **Declare the module and add one line to `BUILTINS`** in `builtins/mod.rs`.
 5. **`make check`** before committing.
 
+## Refused for now
+
+`alias`, `unalias`, `read`, `jobs`, `fg`, `bg`, `umask`, `ulimit`, `hash`, `fc` and `getopts` only work inside a shell. Fedora ships each as a tiny program (`/usr/bin/alias` runs `builtin alias "$@"` in a throwaway `sh`), which would run, change nothing and report success. They sit in `BUILTINS` pointing at `not_yet`, which says `not supported yet` with status 2. Each one gets its own entry when it's built for real.
+
 ## Planned, roughly in order
 
 `alias`, `source`, `test`/`[`, then `read`, `printf`, `shift`, `return`, `set`, then `jobs`, `wait`, `history`.

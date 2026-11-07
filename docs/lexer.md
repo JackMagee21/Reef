@@ -15,7 +15,7 @@ echo hi 2>&1 | wc
 | `Op` | an operator (table below). `\n` is one too, because a newline ends a command like `;` does |
 | `IoNumber` | the `2` in `2>file` or `2>&1`: unquoted digits directly before `<` or `>`. `2 >file`, `'2'>file` and `a2>file` are words instead |
 
-Every token has a `Span`, the byte offsets of its text in the input: `src[span.start..span.end]`. Spans are what let an error point at a column, and later what the highlighter colors.
+Every token has a `Span`, the byte offsets of its text in the input: `src[span.start..span.end]`. Spans are what let an error put a `^` under the token, and later what the highlighter colors.
 
 ### Operators
 
